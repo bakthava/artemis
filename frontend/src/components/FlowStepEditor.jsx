@@ -409,6 +409,10 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
             <ConditionRow
               condition={step.condition || { left: '', operator: 'equals', right: '' }}
               onChange={c => upd({ condition: c })} />
+            <div className="cond-var-hint">
+              💡 Use <code>{'{{_statusCode}}'}</code> for the last HTTP status code,&nbsp;
+              <code>{'{{_body}}'}</code> for the response body, or any extracted variable.
+            </div>
           </div>
 
           <div className="editor-section">

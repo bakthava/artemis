@@ -1516,6 +1516,16 @@ html.dark .toast-error {
 .cond-edge-hint-body  { font-size: 11px; color: var(--text-secondary); line-height: 1.55; }
 .hint-then { color: #16a34a; font-weight: 700; }
 .hint-else { color: #dc2626; font-weight: 700; }
+
+/* Condition variable hint */
+.cond-var-hint {
+  font-size: 11px; color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px; padding: 7px 10px;
+  margin-top: 7px; line-height: 1.5;
+}
+.cond-var-hint code { color: var(--primary-color); font-size: 11px; }
 .sec-hint { font-size: 10px; text-transform: none; font-weight: 400; letter-spacing: 0; color: var(--text-secondary); }
 
 .editor-method-url { display: flex; gap: 8px; margin-bottom: 12px; }

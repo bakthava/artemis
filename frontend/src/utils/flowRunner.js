@@ -157,6 +157,28 @@ export async function runFlow(flow, onUpdate, signal) {
 
           // Extract variables from response
           const extractedVars = {};
+
+          // ── Auto-inject built-in variables ──────────────────────────────
+          // These are always available after any HTTP request step:
+          //   {{_statusCode}}  — HTTP status code as a string, e.g. "200"
+          //   {{_body}}        — full response body
+          //   {{_stepName_statusCode}} / {{_stepName_body}} — step-scoped copies
+          const autoVars = {
+            '_statusCode': String(response.statusCode ?? ''),
+            '_body':       response.body || '',
+          };
+          if (step.name) {
+            const slug = (step.name || '').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+            if (slug) {
+              autoVars[`_${slug}_statusCode`] = String(response.statusCode ?? '');
+              autoVars[`_${slug}_body`]       = response.body || '';
+            }
+          }
+          Object.assign(variables, autoVars);
+          Object.assign(extractedVars, autoVars);
+          log('info', `  Auto-vars: _statusCode=${autoVars['_statusCode']}`);
+
+          // ── User-defined extractions ─────────────────────────────────────
           for (const ex of step.extractions || []) {
             if (ex.variable) {
               const val = extractValue(ex, response);
