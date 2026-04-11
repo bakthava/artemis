@@ -162,6 +162,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
           backgroundColor: meta.color,
           borderRadius: 8,
           cursor: 'move',
+          position: 'absolute',
         }}
         onMouseDown={onMouseDown}
         onMouseEnter={() => onConnectTarget(step.id)}
@@ -173,22 +174,71 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
           <div style={{ fontSize: 11 }}>{step.name}</div>
         </div>
 
-        {/* Connection handle */}
+        {/* Connection handle for START - clickable circle on right edge */}
         {step.type === 'start' && (
-          <div className="conn-handle hnd-main" title="Connect to first step →"
-            style={{ right: -8, top: '50%', transform: 'translateY(-50%)' }}
-            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, '', e); }} />
+          <div 
+            className="conn-handle hnd-main" 
+            title="Pull to connect to next step →"
+            style={{
+              position: 'absolute',
+              width: 12,
+              height: 12,
+              right: -6,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              backgroundColor: '#3b82f6',
+              border: '2px solid white',
+              borderRadius: '50%',
+              cursor: 'crosshair',
+              pointerEvents: 'auto',
+              zIndex: 100,
+            }}
+            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, '', e); }} 
+          />
         )}
         
+        {/* Connection indicator for END - shows it accepts input */}
         {step.type === 'end' && (
-          <div className="conn-handle" title="Connects from another step"
-            style={{ left: -8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <div 
+            style={{
+              position: 'absolute',
+              width: 12,
+              height: 12,
+              left: -6,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              backgroundColor: '#dc2626',
+              border: '2px solid white',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }} 
+          />
         )}
 
-        {/* Delete button (optional for start/end) */}
+        {/* Delete button (not for START) */}
         {step.type !== 'start' && (
-          <button className="node-del-btn" onClick={e => { e.stopPropagation(); onDelete(); }} title="Delete step"
-            style={{ position: 'absolute', top: -4, right: -4 }}>✕</button>
+          <button 
+            className="node-del-btn" 
+            onClick={e => { e.stopPropagation(); onDelete(); }} 
+            title="Delete step"
+            style={{ 
+              position: 'absolute', 
+              top: -6, 
+              right: -6,
+              width: 20,
+              height: 20,
+              padding: 0,
+              backgroundColor: '#dc2626',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 'bold',
+              zIndex: 99,
+            }}
+          >✕</button>
         )}
       </div>
     );
