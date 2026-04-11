@@ -126,7 +126,7 @@ const ArrowDefs = () => (
 );
 
 // ── Step node ─────────────────────────────────────────────────────────────────
-function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, onDoubleClickNode, isTarget }) {
+function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, onDoubleClickNode, onContextMenuNode, isTarget }) {
   const meta  = TYPE_META[step.type] || { icon: '?', color: '#6b7280' };
   const st    = stepStatus.status || 'idle';
   const durMs = stepStatus.durationMs;
@@ -174,6 +174,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
         onMouseEnter={() => onConnectTarget(step.id)}
         onMouseLeave={() => onConnectTarget(null)}
         onDoubleClick={e => { e.stopPropagation(); onDoubleClickNode?.(step.id); }}
+        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenuNode?.(e, step); }}
         onClick={e => { e.stopPropagation(); onSelect(); }}
       >
         <div className="terminal-node-body">
@@ -249,6 +250,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
       onMouseEnter={() => onConnectTarget(step.id)}
       onMouseLeave={() => onConnectTarget(null)}
       onDoubleClick={e => { e.stopPropagation(); onDoubleClickNode?.(step.id); }}
+      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onContextMenuNode?.(e, step); }}
       onClick={e => { e.stopPropagation(); onSelect(); }}
     >
       {/* Colored icon strip on the left */}
@@ -311,6 +313,7 @@ export default function FlowBuilder({ onClose }) {
   const [isRunning,    setIsRunning]    = useState(false);
   const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
   const [flowViewState, setFlowViewState] = useState({}); // { [flowId]: { minimized: bool, targetId: string|null } }
+  const [nodeMenu, setNodeMenu] = useState(null); // { x, y, stepId }
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -385,6 +388,15 @@ export default function FlowBuilder({ onClose }) {
       edges: (f.edges || []).filter(e => e.from !== id && e.to !== id),
     }));
     if (selectedId === id) setSelectedId(null);
+    if (nodeMenu?.stepId === id) setNodeMenu(null);
+  }
+
+  function openNodeContextMenu(e, step) {
+    setNodeMenu({ x: e.clientX, y: e.clientY, stepId: step.id });
+  }
+
+  function closeNodeContextMenu() {
+    setNodeMenu(null);
   }
 
   function moveStep(id, x, y) {
@@ -722,11 +734,12 @@ export default function FlowBuilder({ onClose }) {
   const renderedSteps = (activeFlow.steps || []).filter(s => visibleStepIds.has(s.id));
   const renderedEdges = (edges || []).filter(e => visibleStepIds.has(e.from) && visibleStepIds.has(e.to));
   const selectedStep = selectedId ? findStep(selectedId, activeFlow.steps) : null;
+  const contextStep = nodeMenu?.stepId ? findStep(nodeMenu.stepId, activeFlow.steps) : null;
   const startStep = (activeFlow.steps || []).find(s => s.type === 'start') || null;
   const startConfigStep = selectedStep?.type === 'start' ? selectedStep : startStep;
 
   return (
-    <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); }}>
+    <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); closeNodeContextMenu(); }}>
 
       {/* ── Toolbar ── */}
       <div className="flow-toolbar">
@@ -924,9 +937,54 @@ export default function FlowBuilder({ onClose }) {
                 onConnectStart={handleConnectStart}
                 onConnectTarget={handleConnectTarget}
                 onDoubleClickNode={minimizeToNode}
+                onContextMenuNode={openNodeContextMenu}
                 isTarget={!!connLine && connTarget === step.id && connTarget !== connectFromRef.current?.fromId}
               />
             ))}
+
+            {nodeMenu && contextStep && (
+              <div
+                style={{
+                  position: 'fixed',
+                  left: nodeMenu.x,
+                  top: nodeMenu.y,
+                  zIndex: 500,
+                  minWidth: 220,
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: 8,
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
+                  color: '#cbd5e1',
+                  padding: 8,
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Step Details</div>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{contextStep.name || contextStep.type}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Type: {contextStep.type}</div>
+                <button
+                  className="flow-btn"
+                  style={{ width: '100%', textAlign: 'left', marginBottom: 6 }}
+                  onClick={() => {
+                    setSelectedId(contextStep.id);
+                    closeNodeContextMenu();
+                  }}
+                >
+                  👁 Open Details
+                </button>
+                <button
+                  className="flow-btn danger-btn"
+                  style={{ width: '100%', textAlign: 'left' }}
+                  disabled={contextStep.type === 'start'}
+                  onClick={() => {
+                    removeStep(contextStep.id);
+                    closeNodeContextMenu();
+                  }}
+                >
+                  🗑 Delete Step
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
