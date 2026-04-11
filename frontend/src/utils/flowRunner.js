@@ -117,9 +117,10 @@ export function runAssertions(assertions, response) {
  * Run a flow asynchronously.
  * @param {object} flow        - the flow definition (steps, variables)
  * @param {function} onUpdate  - callback(stepId, { status, result, error, variables })
+ * @param {function} onMetrics - callback(stepName, { responseTime, statusCode, bytesRecv, bytesSent })
  * @param {AbortSignal} signal - optional cancellation signal
  */
-export async function runFlow(flow, onUpdate, signal) {
+export async function runFlow(flow, onUpdate, onMetrics, signal) {
   // Mutable variable map shared across all steps
   const variables = { ...(flow.variables || {}) };
 
@@ -154,6 +155,20 @@ export async function runFlow(flow, onUpdate, signal) {
           const response = await api.request.execute(req);
           const reqMs = Math.round(performance.now() - reqStart);
           log('info', `← HTTP ${response.statusCode} in ${reqMs} ms`);
+
+          // Collect metrics for performance testing
+          if (onMetrics) {
+            const reqBody = substituteRequest(step.request, variables);
+            const bytesRecv = response.body ? new Blob([response.body]).size : 0;
+            const bytesSent = reqBody.body ? new Blob([reqBody.body]).size : 0;
+            onMetrics(step.name || `${reqBody.method} ${reqBody.url}`, {
+              responseTime: reqMs,
+              statusCode: response.statusCode,
+              bytesRecv,
+              bytesSent,
+              success: !response.error,
+            });
+          }
 
           // Extract variables from response
           const extractedVars = {};

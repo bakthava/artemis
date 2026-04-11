@@ -3,6 +3,7 @@ import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { runFlow } from '../utils/flowRunner';
 import FlowStepEditor from './FlowStepEditor';
+import MetricsTable from './MetricsTable';
 
 const NODE_W = 220;
 const NODE_H = 68;
@@ -253,6 +254,7 @@ export default function FlowBuilder({ onClose }) {
   const [stepStatuses, setStepStatuses] = useState({});
   const [runVars,      setRunVars]      = useState({});
   const [isRunning,    setIsRunning]    = useState(false);
+  const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -352,18 +354,57 @@ export default function FlowBuilder({ onClose }) {
     if (isRunning) { abortRef.current?.abort(); return; }
     setStepStatuses(collectIds(activeFlow.steps));
     setRunVars({ ...activeFlow.variables });
+    setMetrics({}); // Reset metrics for new run
     setIsRunning(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      await runFlow(activeFlow, (stepId, update) => {
-        if (typeof update === 'function') {
-          setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
-        } else {
-          setStepStatuses(prev => ({ ...prev, [stepId]: update }));
-          if (update.variables) setRunVars(update.variables);
-        }
-      }, ctrl.signal);
+      await runFlow(activeFlow, 
+        (stepId, update) => {
+          if (typeof update === 'function') {
+            setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
+          } else {
+            setStepStatuses(prev => ({ ...prev, [stepId]: update }));
+            if (update.variables) setRunVars(update.variables);
+          }
+        },
+        (stepName, metric) => {
+          // Aggregate metrics per request name
+          setMetrics(prev => {
+            const existing = prev[stepName] || {
+              count: 0,
+              minMs: Infinity,
+              maxMs: 0,
+              sumMs: 0,
+              sumSqMs: 0,
+              errors: 0,
+              totalBytesRecv: 0,
+              totalBytesSent: 0,
+              samples: [],
+            };
+            const count = existing.count + 1;
+            const sumMs = existing.sumMs + metric.responseTime;
+            const sumSqMs = existing.sumSqMs + (metric.responseTime ** 2);
+            const samples = [...existing.samples, metric.responseTime];
+            return {
+              ...prev,
+              [stepName]: {
+                count,
+                minMs: Math.min(existing.minMs, metric.responseTime),
+                maxMs: Math.max(existing.maxMs, metric.responseTime),
+                sumMs,
+                sumSqMs,
+                avgMs: Math.round(sumMs / count),
+                errors: existing.errors + (metric.success ? 0 : 1),
+                totalBytesRecv: existing.totalBytesRecv + metric.bytesRecv,
+                totalBytesSent: existing.totalBytesSent + metric.bytesSent,
+                samples,
+              },
+            };
+          });
+        },
+        ctrl.signal
+      );
       showToast('Flow completed ✓', 'success');
     } catch (e) {
       if (e.message !== 'Aborted') showToast(`Flow stopped: ${e.message}`, 'error');
@@ -627,6 +668,22 @@ export default function FlowBuilder({ onClose }) {
           </div>
         </div>
 
+        {/* ── Metrics table (performance mode) ── */}
+        {activeFlow.start?.mode === 'performance' && (isRunning || Object.keys(metrics).length > 0) && (
+          <div style={{
+            backgroundColor: '#0f172a',
+            borderTop: '1px solid #334155',
+            padding: '12px 16px',
+            margin: '0 12px 12px',
+            borderRadius: 6,
+          }}>
+            <div style={{color: '#cbd5e1', fontSize: 12, fontWeight: 600, marginBottom: 8}}>
+              📊 Performance Metrics {isRunning && <span style={{color: '#fbbf24'}}>● Live</span>}
+            </div>
+            <MetricsTable metrics={metrics} flowName={activeFlow.name || 'untitled'} />
+          </div>
+        )}
+
         {/* Step editor panel */}
         <div className="flow-editor-panel">
           {selectedId === 'start' ? (
@@ -656,9 +713,18 @@ export default function FlowBuilder({ onClose }) {
                 <>
                   <div className="editor-section">
                     <label className="editor-sec-title">Number of Concurrent Users</label>
-                    <input type="number" min="1" value={activeFlow.start?.numUsers || 1}
-                      onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, numUsers: parseInt(e.target.value) || 1}}))}
-                      className="form-input" style={{marginTop: 6}} />
+                    <div style={{display: 'flex', gap: 8, alignItems: 'center', marginTop: 6}}>
+                      <input type="number" min="1" max="100" value={activeFlow.start?.numUsers || 1}
+                        onChange={e => {
+                          const val = Math.min(100, Math.max(1, parseInt(e.target.value) || 1));
+                          setActiveFlow(f => ({ ...f, start: {...f.start, numUsers: val}}));
+                        }}
+                        className="form-input" style={{flex: 1}} />
+                      <span style={{fontSize: 11, color: '#94a3b8'}}>/ 100 max</span>
+                    </div>
+                    {(activeFlow.start?.numUsers || 1) > 100 && (
+                      <div style={{fontSize: 11, color: '#dc2626', marginTop: 6}}>⚠️ Maximum 100 users allowed</div>
+                    )}
                   </div>
 
                   <div className="editor-section">
