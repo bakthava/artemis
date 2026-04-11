@@ -1130,3 +1130,92 @@ body {
     font-size: 16px; /* iOS zoom prevention */
   }
 }
+
+/* ===== Dark Mode ===== */
+html.dark {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #13131e;
+  --bg-tertiary: #2a2a3d;
+  --border-color: #3a3a4d;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+}
+
+html.dark body {
+  color: var(--text-primary);
+}
+
+html.dark .response-body {
+  background: #1a1a28;
+  color: var(--text-primary);
+}
+
+html.dark .diag-item {
+  background: #2a2a3d;
+}
+
+html.dark .settings-group {
+  background: #22223a;
+}
+
+html.dark .form-textarea {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+html.dark .form-input,
+html.dark select,
+html.dark input[type="text"],
+html.dark input[type="password"],
+html.dark textarea {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+html.dark .response-status.success {
+  background-color: #064e3b;
+  color: #6ee7b7;
+}
+
+html.dark .response-status.error {
+  background-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+html.dark .toast-success {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+
+html.dark .toast-warning {
+  background: #78350f;
+  color: #fcd34d;
+}
+
+html.dark .toast-error {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+/* Theme toggle button */
+.theme-toggle-btn {
+  padding: 8px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--primary-color);
+  transform: translateY(-1px);
+}
