@@ -126,7 +126,7 @@ const ArrowDefs = () => (
 );
 
 // ── Step node ─────────────────────────────────────────────────────────────────
-function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, isTarget }) {
+function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, onDoubleClickNode, isTarget }) {
   const meta  = TYPE_META[step.type] || { icon: '?', color: '#6b7280' };
   const st    = stepStatus.status || 'idle';
   const durMs = stepStatus.durationMs;
@@ -173,6 +173,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
         onMouseDown={onMouseDown}
         onMouseEnter={() => onConnectTarget(step.id)}
         onMouseLeave={() => onConnectTarget(null)}
+        onDoubleClick={e => { e.stopPropagation(); onDoubleClickNode?.(step.id); }}
         onClick={e => { e.stopPropagation(); onSelect(); }}
       >
         <div className="terminal-node-body">
@@ -247,6 +248,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
       onMouseDown={onMouseDown}
       onMouseEnter={() => onConnectTarget(step.id)}
       onMouseLeave={() => onConnectTarget(null)}
+      onDoubleClick={e => { e.stopPropagation(); onDoubleClickNode?.(step.id); }}
       onClick={e => { e.stopPropagation(); onSelect(); }}
     >
       {/* Colored icon strip on the left */}
@@ -309,6 +311,7 @@ export default function FlowBuilder({ onClose }) {
   const [isRunning,    setIsRunning]    = useState(false);
   const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
   const [isFlowMinimized, setIsFlowMinimized] = useState(false);
+  const [minimizedTargetId, setMinimizedTargetId] = useState(null);
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -421,6 +424,19 @@ export default function FlowBuilder({ onClose }) {
     setStepStatuses(collectIds(activeFlow.steps));
     setRunVars({ ...activeFlow.variables });
     showToast('Test statistics reset', 'info');
+  }
+
+  function toggleFlowMinimize() {
+    setIsFlowMinimized(prev => {
+      const next = !prev;
+      if (!next) setMinimizedTargetId(null);
+      return next;
+    });
+  }
+
+  function minimizeToNode(stepId) {
+    setMinimizedTargetId(stepId);
+    setIsFlowMinimized(true);
   }
 
   // ── Run / stop ────────────────────────────────────────────────────────────
@@ -628,6 +644,35 @@ export default function FlowBuilder({ onClose }) {
     const start = allSteps.find(s => s.type === 'start');
     if (!start) return new Set(allSteps.map(s => s.id));
 
+    // If a target node is selected for compact mode, show path START -> target.
+    if (minimizedTargetId && minimizedTargetId !== start.id) {
+      const parent = new Map();
+      const q = [start.id];
+      parent.set(start.id, null);
+      while (q.length > 0) {
+        const cur = q.shift();
+        const nexts = (activeFlow.edges || []).filter(e => e.from === cur).map(e => e.to);
+        for (const n of nexts) {
+          if (parent.has(n)) continue;
+          parent.set(n, cur);
+          q.push(n);
+        }
+      }
+
+      if (parent.has(minimizedTargetId)) {
+        const ids = new Set();
+        let cur = minimizedTargetId;
+        while (cur) {
+          ids.add(cur);
+          cur = parent.get(cur);
+        }
+        return ids;
+      }
+
+      // If target is disconnected from START, show START + target.
+      return new Set([start.id, minimizedTargetId]);
+    }
+
     const nextEdge = (activeFlow.edges || []).find(e => e.from === start.id);
     let topNodeId = nextEdge?.to;
 
@@ -642,7 +687,7 @@ export default function FlowBuilder({ onClose }) {
     const ids = new Set([start.id]);
     if (topNodeId) ids.add(topNodeId);
     return ids;
-  }, [activeFlow.steps, activeFlow.edges, isFlowMinimized]);
+  }, [activeFlow.steps, activeFlow.edges, isFlowMinimized, minimizedTargetId]);
 
   const renderedSteps = (activeFlow.steps || []).filter(s => visibleStepIds.has(s.id));
   const renderedEdges = (edges || []).filter(e => visibleStepIds.has(e.from) && visibleStepIds.has(e.to));
@@ -666,7 +711,7 @@ export default function FlowBuilder({ onClose }) {
           </button>
           <button className="flow-btn" onClick={saveFlow}>💾 Save</button>
           <button className="flow-btn" onClick={resetStats} disabled={Object.keys(metrics).length === 0}>↺ Reset Stats</button>
-          <button className="flow-btn" onClick={() => setIsFlowMinimized(v => !v)}>
+          <button className="flow-btn" onClick={toggleFlowMinimize}>
             {isFlowMinimized ? '⤢ Expand Flow' : '⤡ Minimize Flow'}
           </button>
           {/* + Step dropdown */}
@@ -752,7 +797,7 @@ export default function FlowBuilder({ onClose }) {
               borderRadius: 6,
               padding: '4px 8px'
             }}>
-              Compact view: START → top node
+              Compact view: START → {minimizedTargetId ? 'selected node' : 'top node'} (double-click any node)
             </div>
           )}
           {activeFlow.steps.length === 0 && (
@@ -846,6 +891,7 @@ export default function FlowBuilder({ onClose }) {
                 onMoveStep={moveStep}
                 onConnectStart={handleConnectStart}
                 onConnectTarget={handleConnectTarget}
+                onDoubleClickNode={minimizeToNode}
                 isTarget={!!connLine && connTarget === step.id && connTarget !== connectFromRef.current?.fromId}
               />
             ))}
