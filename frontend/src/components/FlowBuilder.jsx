@@ -9,12 +9,14 @@ const NODE_W = 220;
 const NODE_H = 68;
 
 const STEP_TYPES = [
+  { type: 'start',        icon: '▶',  label: 'Start',          color: '#059669' },
   { type: 'request',      icon: '🌐', label: 'HTTP Request',  color: '#3b82f6' },
   { type: 'condition',    icon: '🔀', label: 'Condition',      color: '#f59e0b' },
   { type: 'loop',         icon: '🔁', label: 'Loop',           color: '#8b5cf6' },
   { type: 'delay',        icon: '⏱',  label: 'Delay',          color: '#6b7280' },
   { type: 'set_variable', icon: '📝', label: 'Set Variable',  color: '#10b981' },
   { type: 'assert',       icon: '✅', label: 'Assert',         color: '#ef4444' },
+  { type: 'end',          icon: '⏹',  label: 'End',            color: '#dc2626' },
 ];
 const TYPE_META = Object.fromEntries(STEP_TYPES.map(t => [t.type, t]));
 
@@ -28,23 +30,24 @@ function mkStep(type, x, y) {
   const id = `s${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
   const base = { id, type, enabled: true, x: x ?? 80, y: y ?? 80 };
   switch (type) {
+    case 'start':        return { ...base, name: 'Start', mode: 'functional', numUsers: 1, rampUpSeconds: 0, durationMode: 'duration', durationSeconds: 60, transactionsCount: 1 };
     case 'request':      return { ...base, name: 'HTTP Request', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, extractions: [], assertions: [] };
     case 'condition':    return { ...base, name: 'Condition', condition: { left: '', operator: 'equals', right: '' }, thenSteps: [], elseSteps: [] };
     case 'loop':         return { ...base, name: 'Loop', loopType: 'count', loopCount: 3, loopCondition: { left: '', operator: 'equals', right: '' }, loopSteps: [] };
     case 'delay':        return { ...base, name: 'Delay', delayMs: 1000 };
     case 'set_variable': return { ...base, name: 'Set Variable', variableName: '', variableValue: '' };
     case 'assert':       return { ...base, name: 'Assert', assertCondition: { left: '', operator: 'equals', right: '' }, assertMessage: 'Assertion failed' };
+    case 'end':          return { ...base, name: 'End' };
     default:             return { ...base, name: type };
   }
 }
 
 function mkFlow() {
+  const startStep = mkStep('start', 80, 30);
   return {
     id: '',
     name: 'New Flow',
-    start: { id: 'start', mode: 'functional', numUsers: 1, rampUpSeconds: 0, durationMode: 'duration', durationSeconds: 60, transactionsCount: 1 },
-    end: { id: 'end', name: 'Flow End' },
-    steps: [],
+    steps: [startStep],
     edges: [],
     variables: {},
   };
@@ -114,44 +117,6 @@ const ArrowDefs = () => (
   </defs>
 );
 
-// ── START node (fixed at top, non-draggable) ───────────────────────────────────
-function StartNode({ start, selected, onSelect, onConnectStart, onConnectTarget, isTarget }) {
-  const x = 40;
-  const y = 30;
-  return (
-    <div
-      className={['flow-start-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
-      style={{ left: x, top: y }}
-      onMouseEnter={() => onConnectTarget('start')}
-      onMouseLeave={() => onConnectTarget(null)}
-      onClick={e => { e.stopPropagation(); onSelect(); }}
-    >
-      <div className="start-icon">▶</div>
-      <div className="start-label">{start?.mode === 'performance' ? '⚡ Performance' : '🟢 Functional'}</div>
-      <div className="conn-handle hnd-main" title="Connect first step →"
-        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart('start', '', e); }} />
-    </div>
-  );
-}
-
-// ── END node (fixed at bottom, non-draggable) ─────────────────────────────────
-function EndNode({ canvasH, selected, onSelect, onConnectTarget, isTarget }) {
-  const x = 40;
-  const y = Math.max(350, canvasH - 80); // near bottom
-  return (
-    <div
-      className={['flow-end-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
-      style={{ left: x, top: y }}
-      onMouseEnter={() => onConnectTarget('end')}
-      onMouseLeave={() => onConnectTarget(null)}
-      onClick={e => { e.stopPropagation(); onSelect(); }}
-    >
-      <div className="end-icon">⏹</div>
-      <div className="end-label">Flow End</div>
-    </div>
-  );
-}
-
 // ── Step node ─────────────────────────────────────────────────────────────────
 function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, isTarget }) {
   const meta  = TYPE_META[step.type] || { icon: '?', color: '#6b7280' };
@@ -182,6 +147,51 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  }
+
+  // Special styling for start/end nodes
+  if (step.type === 'start' || step.type === 'end') {
+    return (
+      <div
+        className={['flow-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
+        style={{
+          left: step.x || 0,
+          top: step.y || 0,
+          width: 140,
+          height: 80,
+          backgroundColor: meta.color,
+          borderRadius: 8,
+          cursor: 'move',
+        }}
+        onMouseDown={onMouseDown}
+        onMouseEnter={() => onConnectTarget(step.id)}
+        onMouseLeave={() => onConnectTarget(null)}
+        onClick={e => { e.stopPropagation(); onSelect(); }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'white', fontWeight: 600 }}>
+          <div style={{ fontSize: 24, marginBottom: 4 }}>{meta.icon}</div>
+          <div style={{ fontSize: 11 }}>{step.name}</div>
+        </div>
+
+        {/* Connection handle */}
+        {step.type === 'start' && (
+          <div className="conn-handle hnd-main" title="Connect to first step →"
+            style={{ right: -8, top: '50%', transform: 'translateY(-50%)' }}
+            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, '', e); }} />
+        )}
+        
+        {step.type === 'end' && (
+          <div className="conn-handle" title="Connects from another step"
+            style={{ left: -8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        )}
+
+        {/* Delete button (optional for start/end) */}
+        {step.type !== 'start' && (
+          <button className="node-del-btn" onClick={e => { e.stopPropagation(); onDelete(); }} title="Delete step"
+            style={{ position: 'absolute', top: -4, right: -4 }}>✕</button>
+        )}
+      </div>
+    );
   }
 
   const stClass = st !== 'idle' ? `fn-${st}` : '';
@@ -631,26 +641,7 @@ export default function FlowBuilder({ onClose }) {
               )}
             </svg>
 
-            {/* START node */}
-            <StartNode
-              start={activeFlow.start}
-              selected={selectedId === 'start'}
-              onSelect={() => setSelectedId('start')}
-              onConnectStart={handleConnectStart}
-              onConnectTarget={handleConnectTarget}
-              isTarget={!!connLine && connTarget === 'start' && connTarget !== connectFromRef.current?.fromId}
-            />
-
-            {/* END node */}
-            <EndNode
-              canvasH={canvasH}
-              selected={selectedId === 'end'}
-              onSelect={() => setSelectedId('end')}
-              onConnectTarget={handleConnectTarget}
-              isTarget={!!connLine && connTarget === 'end' && connTarget !== connectFromRef.current?.fromId}
-            />
-
-            {/* Step nodes */}
+            {/* All step nodes (including START and END) */}
             {activeFlow.steps.map(step => (
               <StepNode
                 key={step.id}
@@ -669,7 +660,7 @@ export default function FlowBuilder({ onClose }) {
         </div>
 
         {/* ── Metrics table (performance mode) ── */}
-        {activeFlow.start?.mode === 'performance' && (isRunning || Object.keys(metrics).length > 0) && (
+        {activeFlow.steps.find(s => s.type === 'start')?.mode === 'performance' && (isRunning || Object.keys(metrics).length > 0) && (
           <div style={{
             backgroundColor: '#0f172a',
             borderTop: '1px solid #334155',
@@ -686,7 +677,7 @@ export default function FlowBuilder({ onClose }) {
 
         {/* Step editor panel */}
         <div className="flow-editor-panel">
-          {selectedId === 'start' ? (
+          {selectedStep?.type === 'start' ? (
             <div className="flow-start-editor">
               <div className="editor-header" style={{marginBottom: 16}}>
                 <h3 style={{margin: 0}}>⚙️ Flow Start Config</h3>
@@ -695,42 +686,42 @@ export default function FlowBuilder({ onClose }) {
                 <div className="editor-sec-title">Execution Mode</div>
                 <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
                   <button 
-                    className={`mode-btn ${activeFlow.start?.mode !== 'performance' ? 'active' : ''}`}
-                    onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, mode: 'functional'}}))}
+                    className={`mode-btn ${selectedStep?.mode !== 'performance' ? 'active' : ''}`}
+                    onClick={() => updateStep({...selectedStep, mode: 'functional'})}
                   >
                     🟢 Functional (1 user)
                   </button>
                   <button 
-                    className={`mode-btn ${activeFlow.start?.mode === 'performance' ? 'active' : ''}`}
-                    onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, mode: 'performance'}}))}
+                    className={`mode-btn ${selectedStep?.mode === 'performance' ? 'active' : ''}`}
+                    onClick={() => updateStep({...selectedStep, mode: 'performance'})}
                   >
                     ⚡ Performance (Load Test)
                   </button>
                 </div>
               </div>
 
-              {activeFlow.start?.mode === 'performance' && (
+              {selectedStep?.mode === 'performance' && (
                 <>
                   <div className="editor-section">
                     <label className="editor-sec-title">Number of Concurrent Users</label>
                     <div style={{display: 'flex', gap: 8, alignItems: 'center', marginTop: 6}}>
-                      <input type="number" min="1" max="100" value={activeFlow.start?.numUsers || 1}
+                      <input type="number" min="1" max="100" value={selectedStep?.numUsers || 1}
                         onChange={e => {
                           const val = Math.min(100, Math.max(1, parseInt(e.target.value) || 1));
-                          setActiveFlow(f => ({ ...f, start: {...f.start, numUsers: val}}));
+                          updateStep({...selectedStep, numUsers: val});
                         }}
                         className="form-input" style={{flex: 1}} />
                       <span style={{fontSize: 11, color: '#94a3b8'}}>/ 100 max</span>
                     </div>
-                    {(activeFlow.start?.numUsers || 1) > 100 && (
+                    {(selectedStep?.numUsers || 1) > 100 && (
                       <div style={{fontSize: 11, color: '#dc2626', marginTop: 6}}>⚠️ Maximum 100 users allowed</div>
                     )}
                   </div>
 
                   <div className="editor-section">
                     <label className="editor-sec-title">Ramp-up Time (seconds)</label>
-                    <input type="number" min="0" value={activeFlow.start?.rampUpSeconds || 0}
-                      onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, rampUpSeconds: parseInt(e.target.value) || 0}}))}
+                    <input type="number" min="0" value={selectedStep?.rampUpSeconds || 0}
+                      onChange={e => updateStep({...selectedStep, rampUpSeconds: parseInt(e.target.value) || 0})}
                       className="form-input" style={{marginTop: 6}} />
                     <div className="sec-hint">Time to spawn all users gradually (0 = instant)</div>
                   </div>
@@ -739,31 +730,31 @@ export default function FlowBuilder({ onClose }) {
                     <div className="editor-sec-title">Execution Duration</div>
                     <div style={{display: 'flex', gap: 8, marginTop: 8, marginBottom: 12}}>
                       <button 
-                        className={`mode-btn ${activeFlow.start?.durationMode !== 'transactions' ? 'active' : ''}`}
-                        onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, durationMode: 'duration'}}))}
+                        className={`mode-btn ${selectedStep?.durationMode !== 'transactions' ? 'active' : ''}`}
+                        onClick={() => updateStep({...selectedStep, durationMode: 'duration'})}
                       >
                         By Time
                       </button>
                       <button 
-                        className={`mode-btn ${activeFlow.start?.durationMode === 'transactions' ? 'active' : ''}`}
-                        onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, durationMode: 'transactions'}}))}
+                        className={`mode-btn ${selectedStep?.durationMode === 'transactions' ? 'active' : ''}`}
+                        onClick={() => updateStep({...selectedStep, durationMode: 'transactions'})}
                       >
                         By Transactions
                       </button>
                     </div>
 
-                    {activeFlow.start?.durationMode !== 'transactions' ? (
+                    {selectedStep?.durationMode !== 'transactions' ? (
                       <>
                         <label className="editor-sec-title">Duration (seconds)</label>
-                        <input type="number" min="1" value={activeFlow.start?.durationSeconds || 60}
-                          onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, durationSeconds: parseInt(e.target.value) || 60}}))}
+                        <input type="number" min="1" value={selectedStep?.durationSeconds || 60}
+                          onChange={e => updateStep({...selectedStep, durationSeconds: parseInt(e.target.value) || 60})}
                           className="form-input" style={{marginTop: 6}} />
                       </>
                     ) : (
                       <>
                         <label className="editor-sec-title">Transactions per User</label>
-                        <input type="number" min="1" value={activeFlow.start?.transactionsCount || 1}
-                          onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, transactionsCount: parseInt(e.target.value) || 1}}))}
+                        <input type="number" min="1" value={selectedStep?.transactionsCount || 1}
+                          onChange={e => updateStep({...selectedStep, transactionsCount: parseInt(e.target.value) || 1})}
                           className="form-input" style={{marginTop: 6}} />
                       </>
                     )}
@@ -771,15 +762,15 @@ export default function FlowBuilder({ onClose }) {
                 </>
               )}
             </div>
-          ) : selectedId === 'end' ? (
+          ) : selectedStep?.type === 'end' ? (
             <div className="flow-end-editor">
               <div className="editor-header" style={{marginBottom: 16}}>
                 <h3 style={{margin: 0}}>⏹ Flow End</h3>
               </div>
               <div className="step-editor-empty" style={{height: 'auto', justifyContent: 'flex-start', paddingTop: 20}}>
                 <div style={{fontSize: 18, marginBottom: 10}}>✓</div>
-                <div>Flow execution complete</div>
-                <div style={{fontSize: 11, marginTop: 10, opacity: 0.5}}>Connect final step(s) to the END node</div>
+                <div>Flow execution ends here</div>
+                <div style={{fontSize: 11, marginTop: 10, opacity: 0.5}}>Connect from step(s) to this END step</div>
               </div>
             </div>
           ) : selectedStep ? (
@@ -796,4 +787,3 @@ export default function FlowBuilder({ onClose }) {
     </div>
   );
 }
-
