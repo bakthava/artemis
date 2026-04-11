@@ -120,6 +120,24 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
     setParams(newParams);
   };
 
+  const handleParamDelete = (index) => {
+    const entries = Object.entries(request.params);
+    const [keyToDelete] = entries[index] || [];
+    if (keyToDelete === undefined) return;
+    const newParams = { ...request.params };
+    delete newParams[keyToDelete];
+    setParams(newParams);
+  };
+
+  const handleHeaderDelete = (index) => {
+    const entries = Object.entries(request.headers);
+    const [keyToDelete] = entries[index] || [];
+    if (keyToDelete === undefined) return;
+    const newHeaders = { ...request.headers };
+    delete newHeaders[keyToDelete];
+    setHeaders(newHeaders);
+  };
+
   return (
     <div className="request-builder">
       {/* URL Bar */}
@@ -216,6 +234,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
                   onChange={(e) => handleParamChange(key, e.target.value, index)}
                   className="form-input"
                 />
+                <button
+                  onClick={() => handleParamDelete(index)}
+                  title="Delete parameter"
+                >✕</button>
               </div>
             ))}
             <button
@@ -247,6 +269,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
                   onChange={(e) => handleHeaderChange(key, e.target.value, index)}
                   className="form-input"
                 />
+                <button
+                  onClick={() => handleHeaderDelete(index)}
+                  title="Delete header"
+                >✕</button>
               </div>
             ))}
             <button
