@@ -174,23 +174,98 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
         </label>
       </div>
 
-      {/* Run status badge */}
+      {/* Run status + timing + logs panel */}
       {status && status.status !== 'idle' && (
-        <div className={`editor-status-badge status-${status.status}`}>
-          {status.status === 'running' && <><span className="spin-icon">⟳</span> Running…</>}
-          {status.status === 'success' && <>✓ Success{status.result?.statusCode ? ` — HTTP ${status.result.statusCode}` : ''}</>}
-          {status.status === 'failed'  && <>✗ {status.error || 'Failed'}</>}
-          {status.status === 'skipped' && <>↷ Skipped</>}
-          {/* assertion detail */}
-          {status.result?.assertionResults?.length > 0 && (
-            <div className="assert-results-list">
-              {status.result.assertionResults.map((r, i) => (
-                <div key={i} className={`ar-row ${r.passed ? 'ar-pass' : 'ar-fail'}`}>
-                  {r.passed ? '✓' : '✗'} {r.source}{r.header ? `[${r.header}]` : ''}&nbsp;
-                  <em>{r.operator}</em>&nbsp;"{r.expected}"
-                  {!r.passed && <> — got: "{String(r.actual || '').substring(0, 60)}"</>}
+        <div className={`step-result-panel status-${status.status}`}>
+          {/* Header row: status + duration */}
+          <div className="srp-header">
+            <span className="srp-status-icon">
+              {status.status === 'running' && <span className="spin-icon">⟳</span>}
+              {status.status === 'success' && '✓'}
+              {status.status === 'failed'  && '✗'}
+              {status.status === 'skipped' && '↷'}
+            </span>
+            <span className="srp-status-label">
+              {status.status === 'running' && 'Running…'}
+              {status.status === 'success' && 'Success'}
+              {status.status === 'failed'  && (status.error || 'Failed')}
+              {status.status === 'skipped' && 'Skipped'}
+            </span>
+            {status.result?.statusCode != null && (
+              <span className="srp-http-code">HTTP {status.result.statusCode}</span>
+            )}
+            {status.durationMs != null && (
+              <span className="srp-duration">{status.durationMs} ms</span>
+            )}
+            {status.result?.reqMs != null && status.result.reqMs !== status.durationMs && (
+              <span className="srp-duration srp-req-ms" title="Network round-trip">🌐 {status.result.reqMs} ms</span>
+            )}
+          </div>
+
+          {/* Extracted variables */}
+          {status.result?.extractedVars && Object.keys(status.result.extractedVars).length > 0 && (
+            <div className="srp-section">
+              <div className="srp-sec-title">Extracted Variables</div>
+              {Object.entries(status.result.extractedVars).map(([k, v]) => (
+                <div key={k} className="srp-var-row">
+                  <span className="srp-var-key">{k}</span>
+                  <span className="srp-var-eq">=</span>
+                  <span className="srp-var-val">{String(v).substring(0, 120)}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Assertion results */}
+          {status.result?.assertionResults?.length > 0 && (
+            <div className="srp-section">
+              <div className="srp-sec-title">Assertions</div>
+              {status.result.assertionResults.map((r, i) => (
+                <div key={i} className={`srp-assert-row ${r.passed ? 'pass' : 'fail'}`}>
+                  <span className="srp-assert-icon">{r.passed ? '✓' : '✗'}</span>
+                  <span className="srp-assert-desc">
+                    {r.source}{r.header ? `[${r.header}]` : ''} <em>{r.operator}</em> &quot;{r.expected}&quot;
+                    {!r.passed && <span className="srp-assert-actual"> ← got: &quot;{String(r.actual||'').substring(0,80)}&quot;</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Condition result */}
+          {status.result?.conditionMet != null && (
+            <div className="srp-section">
+              <div className="srp-sec-title">Condition</div>
+              <div className={`srp-cond-result ${status.result.conditionMet ? 'pass' : 'else'}`}>
+                Branch taken: <strong>{status.result.conditionMet ? 'THEN ✓' : 'ELSE →'}</strong>
+              </div>
+            </div>
+          )}
+
+          {/* Set variable result */}
+          {status.result?.variable && (
+            <div className="srp-section">
+              <div className="srp-sec-title">Variable Set</div>
+              <div className="srp-var-row">
+                <span className="srp-var-key">{status.result.variable}</span>
+                <span className="srp-var-eq">=</span>
+                <span className="srp-var-val">{String(status.result.value ?? '').substring(0, 120)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Logs */}
+          {status.logs?.length > 0 && (
+            <div className="srp-section">
+              <div className="srp-sec-title">Execution Log</div>
+              <div className="srp-logs">
+                {status.logs.map((entry, i) => (
+                  <div key={i} className={`srp-log-row log-${entry.level}`}>
+                    <span className="srp-log-t">+{entry.t}ms</span>
+                    <span className="srp-log-msg">{entry.msg}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -337,15 +412,15 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
           </div>
 
           <div className="editor-section">
-            <div className="editor-sec-title branch-then">✓ THEN (condition is true)</div>
-            <MiniStepList steps={step.thenSteps || []} branch="thenSteps"
-              onUpdateParent={upd} statuses={stepStatuses} />
-          </div>
-
-          <div className="editor-section">
-            <div className="editor-sec-title branch-else">✗ ELSE (condition is false)</div>
-            <MiniStepList steps={step.elseSteps || []} branch="elseSteps"
-              onUpdateParent={upd} statuses={stepStatuses} />
+            <div className="cond-edge-hint">
+              <div className="cond-edge-hint-title">🔀 Branch routing via canvas edges</div>
+              <div className="cond-edge-hint-body">
+                Use the <span className="hint-then">●&nbsp;THEN</span> and <span className="hint-else">●&nbsp;ELSE</span> handles
+                on the right edge of this node to connect to the next steps.
+                When the condition is <strong>true</strong> the THEN connection runs;
+                when <strong>false</strong> the ELSE connection runs.
+              </div>
+            </div>
           </div>
         </div>
       )}

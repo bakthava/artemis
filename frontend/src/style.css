@@ -1504,6 +1504,18 @@ html.dark .toast-error {
 .editor-sec-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-secondary); margin-bottom: 7px; }
 .editor-sec-title.branch-then { color: #16a34a; }
 .editor-sec-title.branch-else { color: #dc2626; }
+
+/* Condition edge routing hint (replaces nested step lists) */
+.cond-edge-hint {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 11px 13px;
+}
+.cond-edge-hint-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 7px; }
+.cond-edge-hint-body  { font-size: 11px; color: var(--text-secondary); line-height: 1.55; }
+.hint-then { color: #16a34a; font-weight: 700; }
+.hint-else { color: #dc2626; font-weight: 700; }
 .sec-hint { font-size: 10px; text-transform: none; font-weight: 400; letter-spacing: 0; color: var(--text-secondary); }
 
 .editor-method-url { display: flex; gap: 8px; margin-bottom: 12px; }

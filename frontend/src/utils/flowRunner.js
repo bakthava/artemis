@@ -123,6 +123,12 @@ export async function runFlow(flow, onUpdate, signal) {
   // Mutable variable map shared across all steps
   const variables = { ...(flow.variables || {}) };
 
+  // Set of condition step IDs that have outgoing edges — those use edge-routing,
+  // NOT nested thenSteps/elseSteps, so we skip the nested execution for them.
+  const conditionEdgeFromIds = new Set(
+    (flow.edges || []).filter(e => e.label === 'then' || e.label === 'else').map(e => e.from)
+  );
+
   async function runStep(step) {
     if (signal?.aborted) throw new Error('Aborted');
     if (step.enabled === false) {
@@ -191,9 +197,13 @@ export async function runFlow(flow, onUpdate, signal) {
           const durationMs = Math.round(performance.now() - stepStart);
           log('info', `✓ Done in ${durationMs} ms`);
           onUpdate(step.id, { status: 'success', result: { conditionMet }, variables: { ...variables }, logs, durationMs });
-          const branchSteps = conditionMet ? (step.thenSteps || []) : (step.elseSteps || []);
-          for (const child of branchSteps) {
-            await runStep(child);
+          // Only run nested thenSteps/elseSteps when there are NO outgoing condition edges
+          // (backward-compatible with old flows that used nested steps instead of canvas edges)
+          if (!conditionEdgeFromIds.has(step.id)) {
+            const branchSteps = conditionMet ? (step.thenSteps || []) : (step.elseSteps || []);
+            for (const child of branchSteps) {
+              await runStep(child);
+            }
           }
           return { conditionMet };
         }
@@ -336,9 +346,11 @@ export async function runFlow(flow, onUpdate, signal) {
     const nexts  = nextMap[stepId] || [];
     if (!nexts.length) return;
     if (step.type === 'condition' && result?.conditionMet !== undefined) {
+      // Route ONLY to the matching labeled edge — never fall back to wrong branch
       const label = result.conditionMet ? 'then' : 'else';
-      const next  = nexts.find(n => n.label === label) || nexts[0];
+      const next  = nexts.find(n => n.label === label);
       if (next) await executeFrom(next.to);
+      // If no matching edge exists for this branch, execution simply stops here
     } else {
       for (const n of nexts) {
         if (signal?.aborted) break;
