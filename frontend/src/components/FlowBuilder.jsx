@@ -308,6 +308,7 @@ export default function FlowBuilder({ onClose }) {
   const [runVars,      setRunVars]      = useState({});
   const [isRunning,    setIsRunning]    = useState(false);
   const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
+  const [isFlowMinimized, setIsFlowMinimized] = useState(false);
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -620,6 +621,31 @@ export default function FlowBuilder({ onClose }) {
   }, [activeFlow.steps]);
 
   const edges       = activeFlow.edges || [];
+  const visibleStepIds = useMemo(() => {
+    const allSteps = activeFlow.steps || [];
+    if (!isFlowMinimized) return new Set(allSteps.map(s => s.id));
+
+    const start = allSteps.find(s => s.type === 'start');
+    if (!start) return new Set(allSteps.map(s => s.id));
+
+    const nextEdge = (activeFlow.edges || []).find(e => e.from === start.id);
+    let topNodeId = nextEdge?.to;
+
+    if (!topNodeId) {
+      const candidates = allSteps.filter(s => s.id !== start.id && s.type !== 'end');
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
+        topNodeId = candidates[0].id;
+      }
+    }
+
+    const ids = new Set([start.id]);
+    if (topNodeId) ids.add(topNodeId);
+    return ids;
+  }, [activeFlow.steps, activeFlow.edges, isFlowMinimized]);
+
+  const renderedSteps = (activeFlow.steps || []).filter(s => visibleStepIds.has(s.id));
+  const renderedEdges = (edges || []).filter(e => visibleStepIds.has(e.from) && visibleStepIds.has(e.to));
   const selectedStep = selectedId ? findStep(selectedId, activeFlow.steps) : null;
   const startStep = (activeFlow.steps || []).find(s => s.type === 'start') || null;
   const startConfigStep = selectedStep?.type === 'start' ? selectedStep : startStep;
@@ -640,6 +666,9 @@ export default function FlowBuilder({ onClose }) {
           </button>
           <button className="flow-btn" onClick={saveFlow}>💾 Save</button>
           <button className="flow-btn" onClick={resetStats} disabled={Object.keys(metrics).length === 0}>↺ Reset Stats</button>
+          <button className="flow-btn" onClick={() => setIsFlowMinimized(v => !v)}>
+            {isFlowMinimized ? '⤢ Expand Flow' : '⤡ Minimize Flow'}
+          </button>
           {/* + Step dropdown */}
           <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
             <button className="flow-btn" onClick={() => setShowAddMenu(m => !m)}>+ Step ▾</button>
@@ -710,6 +739,22 @@ export default function FlowBuilder({ onClose }) {
         {/* ── Node canvas ── */}
         <div className="flow-canvas-wrap" ref={canvasWrapRef}
           onClick={() => setSelectedId(null)}>
+          {isFlowMinimized && (
+            <div style={{
+              position: 'absolute',
+              top: 10,
+              left: 12,
+              zIndex: 60,
+              fontSize: 11,
+              color: '#94a3b8',
+              background: 'rgba(15,23,42,0.88)',
+              border: '1px solid #334155',
+              borderRadius: 6,
+              padding: '4px 8px'
+            }}>
+              Compact view: START → top node
+            </div>
+          )}
           {activeFlow.steps.length === 0 && (
             <div className="flow-canvas-empty">
               <div style={{ fontSize: 36 }}>⚡</div>
@@ -726,7 +771,7 @@ export default function FlowBuilder({ onClose }) {
               <ArrowDefs />
 
               {/* Existing edges */}
-              {edges.map(edge => {
+              {renderedEdges.map(edge => {
                 const from = activeFlow.steps.find(s => s.id === edge.from);
                 const to   = activeFlow.steps.find(s => s.id === edge.to);
                 if (!from || !to) return null;
@@ -790,7 +835,7 @@ export default function FlowBuilder({ onClose }) {
             </svg>
 
             {/* All step nodes (including START and END) */}
-            {activeFlow.steps.map(step => (
+            {renderedSteps.map(step => (
               <StepNode
                 key={step.id}
                 step={step}
