@@ -1,79 +1,62 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { runFlow } from '../utils/flowRunner';
 import FlowStepEditor from './FlowStepEditor';
 
-// ── Step type registry ─────────────────────────────────────────────────────────
+const NODE_W = 220;
+const NODE_H = 68;
+
 const STEP_TYPES = [
-  { type: 'request',      icon: '🌐', label: 'HTTP Request'    },
-  { type: 'condition',    icon: '🔀', label: 'Condition If/Else' },
-  { type: 'loop',         icon: '🔁', label: 'Loop'            },
-  { type: 'delay',        icon: '⏱',  label: 'Delay'           },
-  { type: 'set_variable', icon: '📝', label: 'Set Variable'    },
-  { type: 'assert',       icon: '✅', label: 'Assert'           },
+  { type: 'request',      icon: '🌐', label: 'HTTP Request',  color: '#3b82f6' },
+  { type: 'condition',    icon: '🔀', label: 'Condition',      color: '#f59e0b' },
+  { type: 'loop',         icon: '🔁', label: 'Loop',           color: '#8b5cf6' },
+  { type: 'delay',        icon: '⏱',  label: 'Delay',          color: '#6b7280' },
+  { type: 'set_variable', icon: '📝', label: 'Set Variable',  color: '#10b981' },
+  { type: 'assert',       icon: '✅', label: 'Assert',         color: '#ef4444' },
 ];
 const TYPE_META = Object.fromEntries(STEP_TYPES.map(t => [t.type, t]));
 
-// ── Step factory ───────────────────────────────────────────────────────────────
-function mkStep(type) {
+function nextPos(steps) {
+  if (!steps.length) return { x: 80, y: 80 };
+  const bot = [...steps].sort((a, b) => (b.y || 0) - (a.y || 0))[0];
+  return { x: bot.x || 80, y: (bot.y || 80) + NODE_H + 44 };
+}
+
+function mkStep(type, x, y) {
   const id = `s${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
+  const base = { id, type, enabled: true, x: x ?? 80, y: y ?? 80 };
   switch (type) {
-    case 'request':
-      return { id, type, name: 'HTTP Request', enabled: true,
-        request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' },
-        extractions: [], assertions: [] };
-    case 'condition':
-      return { id, type, name: 'Condition', enabled: true,
-        condition: { left: '', operator: 'equals', right: '' }, thenSteps: [], elseSteps: [] };
-    case 'loop':
-      return { id, type, name: 'Loop', enabled: true, loopType: 'count', loopCount: 3,
-        loopCondition: { left: '', operator: 'equals', right: '' }, loopSteps: [] };
-    case 'delay':
-      return { id, type, name: 'Delay', enabled: true, delayMs: 1000 };
-    case 'set_variable':
-      return { id, type, name: 'Set Variable', enabled: true, variableName: '', variableValue: '' };
-    case 'assert':
-      return { id, type, name: 'Assert', enabled: true,
-        assertCondition: { left: '', operator: 'equals', right: '' }, assertMessage: 'Assertion failed' };
-    default:
-      return { id, type, name: type, enabled: true };
+    case 'request':      return { ...base, name: 'HTTP Request', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, extractions: [], assertions: [] };
+    case 'condition':    return { ...base, name: 'Condition', condition: { left: '', operator: 'equals', right: '' }, thenSteps: [], elseSteps: [] };
+    case 'loop':         return { ...base, name: 'Loop', loopType: 'count', loopCount: 3, loopCondition: { left: '', operator: 'equals', right: '' }, loopSteps: [] };
+    case 'delay':        return { ...base, name: 'Delay', delayMs: 1000 };
+    case 'set_variable': return { ...base, name: 'Set Variable', variableName: '', variableValue: '' };
+    case 'assert':       return { ...base, name: 'Assert', assertCondition: { left: '', operator: 'equals', right: '' }, assertMessage: 'Assertion failed' };
+    default:             return { ...base, name: type };
   }
 }
 
 function mkFlow() {
-  return { id: '', name: 'New Flow', steps: [], variables: {} };
+  return { id: '', name: 'New Flow', steps: [], edges: [], variables: {} };
 }
 
-// ── Step description (shown on canvas card) ────────────────────────────────────
 function stepDesc(step) {
   switch (step.type) {
-    case 'request':
-      return step.request ? `${step.request.method}  ${step.request.url || '—'}` : '';
-    case 'condition':
-      return step.condition
-        ? `IF ${step.condition.left || '…'} ${step.condition.operator} ${step.condition.right || '…'}`
-        : '';
-    case 'loop':
-      return step.loopType === 'while'
-        ? `While ${step.loopCondition?.left || '…'}`
-        : `Repeat ${step.loopCount || 0}×`;
-    case 'delay':      return `Wait ${step.delayMs || 0} ms`;
+    case 'request':      return step.request ? `${step.request.method} ${step.request.url || '—'}` : '';
+    case 'condition':    return step.condition ? `IF ${step.condition.left || '…'} ${step.condition.operator} ${step.condition.right || '…'}` : '';
+    case 'loop':         return step.loopType === 'while' ? `While ${step.loopCondition?.left || '…'}` : `Repeat ${step.loopCount || 0}×`;
+    case 'delay':        return `Wait ${step.delayMs || 0} ms`;
     case 'set_variable': return step.variableName ? `{{${step.variableName}}} = ${step.variableValue || ''}` : '';
-    case 'assert':
-      return step.assertCondition
-        ? `${step.assertCondition.left || '…'} ${step.assertCondition.operator} ${step.assertCondition.right || '…'}`
-        : '';
-    default: return '';
+    case 'assert':       return step.assertCondition ? `${step.assertCondition.left || '…'} ${step.assertCondition.operator} ${step.assertCondition.right || '…'}` : '';
+    default:             return '';
   }
 }
 
-// ── Recursive helpers for nested step trees ───────────────────────────────────
 function findStep(id, steps) {
   for (const s of steps) {
     if (s.id === id) return s;
-    const nested = [...(s.thenSteps || []), ...(s.elseSteps || []), ...(s.loopSteps || [])];
-    const found = findStep(id, nested);
+    const found = findStep(id, [...(s.thenSteps || []), ...(s.elseSteps || []), ...(s.loopSteps || [])]);
     if (found) return found;
   }
   return null;
@@ -99,37 +82,141 @@ function collectIds(steps, out = {}) {
   return out;
 }
 
-// ── Status icon ───────────────────────────────────────────────────────────────
-function StatusIcon({ status }) {
-  if (!status || status === 'idle') return <span className="step-status idle" />;
-  if (status === 'running') return <span className="step-status running spin-icon">⟳</span>;
-  if (status === 'success') return <span className="step-status success">✓</span>;
-  if (status === 'failed')  return <span className="step-status failed">✗</span>;
-  if (status === 'skipped') return <span className="step-status skipped">↷</span>;
-  return null;
+// Bezier path between two points
+function bezier(x1, y1, x2, y2) {
+  const cp = Math.max(60, Math.abs(x2 - x1) * 0.5);
+  return `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
+}
+
+// ── SVG arrowhead markers ─────────────────────────────────────────────────────
+const ArrowDefs = () => (
+  <defs>
+    {[
+      { id: 'am-default', c: '#94a3b8' },
+      { id: 'am-then',    c: '#16a34a' },
+      { id: 'am-else',    c: '#dc2626' },
+      { id: 'am-sel',     c: '#3b82f6' },
+      { id: 'am-live',    c: '#3b82f6' },
+    ].map(({ id, c }) => (
+      <marker key={id} id={id} markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L7,3 z" fill={c} />
+      </marker>
+    ))}
+  </defs>
+);
+
+// ── Step node ─────────────────────────────────────────────────────────────────
+function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, isTarget }) {
+  const meta  = TYPE_META[step.type] || { icon: '?', color: '#6b7280' };
+  const st    = stepStatus.status || 'idle';
+  const durMs = stepStatus.durationMs;
+  const httpC = stepStatus.result?.statusCode;
+  const reqMs = stepStatus.result?.reqMs;
+  const err   = stepStatus.error;
+
+  const dragRef = useRef(null);
+
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    if (e.target.closest('.conn-handle') || e.target.closest('.node-del-btn')) return;
+    e.stopPropagation();
+    onSelect();
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: step.x || 0, oy: step.y || 0 };
+    function onMove(ev) {
+      if (!dragRef.current) return;
+      onMoveStep(step.id,
+        Math.max(0, dragRef.current.ox + ev.clientX - dragRef.current.sx),
+        Math.max(0, dragRef.current.oy + ev.clientY - dragRef.current.sy));
+    }
+    function onUp() {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  const stClass = st !== 'idle' ? `fn-${st}` : '';
+  const isCondition = step.type === 'condition';
+
+  return (
+    <div
+      className={['flow-node', selected ? 'fn-selected' : '', stClass, !step.enabled ? 'fn-disabled' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
+      style={{ left: step.x || 0, top: step.y || 0 }}
+      onMouseDown={onMouseDown}
+      onMouseEnter={() => onConnectTarget(step.id)}
+      onMouseLeave={() => onConnectTarget(null)}
+      onClick={e => { e.stopPropagation(); onSelect(); }}
+    >
+      {/* Colored icon strip on the left */}
+      <div className="fn-strip" style={{ background: meta.color }}>
+        <span className="fn-icon">{meta.icon}</span>
+      </div>
+
+      {/* Body */}
+      <div className="fn-body">
+        <div className="fn-name">{step.name || step.type}</div>
+        <div className="fn-desc">{stepDesc(step)}</div>
+        {err && <div className="fn-err">✗ {err}</div>}
+        {(httpC != null || durMs != null) && (
+          <div className="fn-badges">
+            {httpC  != null && <span className={`fn-http${httpC >= 400 ? ' fn-http-err' : ''}`}>{httpC}</span>}
+            {reqMs  != null && <span className="fn-timing">🌐{reqMs}ms</span>}
+            {durMs  != null && st !== 'running' && <span className="fn-timing">{durMs}ms</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Status */}
+      <div className="fn-status">
+        {st === 'running' && <span className="spin-icon" style={{ color: '#3b82f6' }}>⟳</span>}
+        {st === 'success' && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>}
+        {st === 'failed'  && <span style={{ color: '#dc2626', fontWeight: 700 }}>✗</span>}
+        {st === 'skipped' && <span style={{ color: '#94a3b8' }}>↷</span>}
+      </div>
+
+      {/* Delete */}
+      <button className="node-del-btn" onClick={e => { e.stopPropagation(); onDelete(); }} title="Delete step">✕</button>
+
+      {/* Connection handles — right edge */}
+      {isCondition ? (
+        <>
+          <div className="conn-handle hnd-then" title="THEN branch →"
+            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, 'then', e); }} />
+          <div className="conn-handle hnd-else" title="ELSE branch →"
+            onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, 'else', e); }} />
+        </>
+      ) : (
+        <div className="conn-handle hnd-main" title="Connect to next step →"
+          onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart(step.id, '', e); }} />
+      )}
+    </div>
+  );
 }
 
 // ── FlowBuilder ───────────────────────────────────────────────────────────────
 export default function FlowBuilder({ onClose }) {
   const { showToast } = useToast();
+  const canvasWrapRef = useRef(null);
 
-  // Saved flows list
   const [flows,        setFlows]        = useState([]);
-  // Currently editing flow (local copy — not auto-saved)
   const [activeFlow,   setActiveFlow]   = useState(mkFlow);
   const [selectedId,   setSelectedId]   = useState(null);
-
-  // Execution state
+  const [selectedEdge, setSelectedEdge] = useState(null);
   const [stepStatuses, setStepStatuses] = useState({});
   const [runVars,      setRunVars]      = useState({});
   const [isRunning,    setIsRunning]    = useState(false);
   const abortRef = useRef(null);
 
-  // UI toggles
   const [showVars,     setShowVars]     = useState(false);
   const [showAddMenu,  setShowAddMenu]  = useState(false);
-  const [dragIdx,      setDragIdx]      = useState(null);
-  const [dragOver,     setDragOver]     = useState(null);
+
+  // Connection drawing
+  const connectFromRef = useRef(null);   // { fromId, fromLabel }
+  const connectTargRef = useRef(null);   // step id currently hovered during connect
+  const [connLine,     setConnLine]     = useState(null);   // { x1,y1,x2,y2 } for SVG
+  const [connTarget,   setConnTarget]   = useState(null);   // highlighted drop target
 
   useEffect(() => { loadFlows(); }, []);
 
@@ -139,11 +226,16 @@ export default function FlowBuilder({ onClose }) {
   }
 
   function selectFlow(f) {
-    setActiveFlow(JSON.parse(JSON.stringify(f)));
+    const steps = (f.steps || []).map((s, i) => ({
+      ...s,
+      x: s.x > 0 ? s.x : 80 + (i % 3) * (NODE_W + 60),
+      y: s.y > 0 ? s.y : 80 + Math.floor(i / 3) * (NODE_H + 60),
+    }));
+    setActiveFlow({ ...JSON.parse(JSON.stringify({ ...f, steps })), edges: f.edges || [] });
     setSelectedId(null);
+    setSelectedEdge(null);
     setStepStatuses({});
     setRunVars({});
-    setShowVars(false);
   }
 
   async function saveFlow() {
@@ -170,36 +262,44 @@ export default function FlowBuilder({ onClose }) {
     } catch (e) { showToast(`Delete failed: ${e.message}`, 'error'); }
   }
 
-  // ── Steps ─────────────────────────────────────────────────────────────────
   function addStep(type) {
-    const step = mkStep(type);
+    const { x, y } = nextPos(activeFlow.steps);
+    const step = mkStep(type, x, y);
     setActiveFlow(f => ({ ...f, steps: [...f.steps, step] }));
     setSelectedId(step.id);
     setShowAddMenu(false);
   }
 
   function removeStep(id) {
-    setActiveFlow(f => ({ ...f, steps: f.steps.filter(s => s.id !== id) }));
+    setActiveFlow(f => ({
+      ...f,
+      steps: f.steps.filter(s => s.id !== id),
+      edges: (f.edges || []).filter(e => e.from !== id && e.to !== id),
+    }));
     if (selectedId === id) setSelectedId(null);
+  }
+
+  function moveStep(id, x, y) {
+    setActiveFlow(f => ({ ...f, steps: f.steps.map(s => s.id === id ? { ...s, x, y } : s) }));
   }
 
   function updateStep(id, updates) {
     setActiveFlow(f => ({ ...f, steps: applyUpdate(f.steps, id, updates) }));
   }
 
-  // ── Drag & drop (top-level steps) ─────────────────────────────────────────
-  function onDragStart(e, i) { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; }
-  function onDragOver(e, i)  { e.preventDefault(); setDragOver(i); }
-  function onDrop(e, i) {
-    e.preventDefault();
-    if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDragOver(null); return; }
-    const steps = [...activeFlow.steps];
-    const [moved] = steps.splice(dragIdx, 1);
-    steps.splice(i, 0, moved);
-    setActiveFlow(f => ({ ...f, steps }));
-    setDragIdx(null); setDragOver(null);
+  function addEdge(fromId, toId, label) {
+    setActiveFlow(f => {
+      const edges = f.edges || [];
+      if (edges.find(e => e.from === fromId && e.to === toId && (e.label || '') === (label || ''))) return f;
+      const id = `e${Date.now()}${Math.random().toString(36).substr(2, 5)}`;
+      return { ...f, edges: [...edges, { id, from: fromId, to: toId, label: label || '' }] };
+    });
   }
-  function onDragEnd() { setDragIdx(null); setDragOver(null); }
+
+  function removeEdge(id) {
+    setActiveFlow(f => ({ ...f, edges: (f.edges || []).filter(e => e.id !== id) }));
+    setSelectedEdge(null);
+  }
 
   // ── Run / stop ────────────────────────────────────────────────────────────
   async function handleRun() {
@@ -207,12 +307,10 @@ export default function FlowBuilder({ onClose }) {
     setStepStatuses(collectIds(activeFlow.steps));
     setRunVars({ ...activeFlow.variables });
     setIsRunning(true);
-
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
       await runFlow(activeFlow, (stepId, update) => {
-        // update can be an object or (rarely) a function — handle both
         if (typeof update === 'function') {
           setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
         } else {
@@ -227,45 +325,93 @@ export default function FlowBuilder({ onClose }) {
   }
 
   // ── Variables ─────────────────────────────────────────────────────────────
-  function addVar() {
-    setActiveFlow(f => ({ ...f, variables: { ...f.variables, '': '' } }));
-  }
-  function setVar(oldKey, newKey, value) {
-    setActiveFlow(f => {
-      const v = { ...f.variables };
-      if (oldKey !== newKey) delete v[oldKey];
-      v[newKey] = value;
-      return { ...f, variables: v };
-    });
-  }
-  function delVar(key) {
-    setActiveFlow(f => { const v = { ...f.variables }; delete v[key]; return { ...f, variables: v }; });
+  function addVar()                  { setActiveFlow(f => ({ ...f, variables: { ...f.variables, '': '' } })); }
+  function setVar(ok, nk, v)         { setActiveFlow(f => { const m = { ...f.variables }; if (ok !== nk) delete m[ok]; m[nk] = v; return { ...f, variables: m }; }); }
+  function delVar(k)                 { setActiveFlow(f => { const m = { ...f.variables }; delete m[k]; return { ...f, variables: m }; }); }
+
+  // ── Canvas coordinate helper (accounts for scroll) ────────────────────────
+  function getCanvasXY(e) {
+    const el = canvasWrapRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect();
+    return { x: e.clientX - r.left + el.scrollLeft, y: e.clientY - r.top + el.scrollTop };
   }
 
+  // ── Start drawing a connection ─────────────────────────────────────────────
+  function handleConnectStart(fromId, fromLabel, e) {
+    const step = activeFlow.steps.find(s => s.id === fromId);
+    if (!step) return;
+    const pos = getCanvasXY(e);
+    let fy = (step.y || 0) + NODE_H / 2;
+    if (fromLabel === 'then') fy = (step.y || 0) + NODE_H * 0.28;
+    if (fromLabel === 'else') fy = (step.y || 0) + NODE_H * 0.72;
+    connectFromRef.current = { fromId, fromLabel };
+    setConnLine({ x1: (step.x || 0) + NODE_W + 8, y1: fy, x2: pos.x, y2: pos.y });
+
+    function onMove(ev) {
+      const p = getCanvasXY(ev);
+      setConnLine(l => l ? { ...l, x2: p.x, y2: p.y } : null);
+    }
+    function onUp() {
+      const cf = connectFromRef.current;
+      const ct = connectTargRef.current;
+      if (cf && ct && ct !== cf.fromId) addEdge(cf.fromId, ct, cf.fromLabel || '');
+      connectFromRef.current = null;
+      connectTargRef.current = null;
+      setConnLine(null);
+      setConnTarget(null);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function handleConnectTarget(stepId) {
+    connectTargRef.current = stepId;
+    setConnTarget(stepId);
+  }
+
+  // Canvas size computed from step positions
+  const { canvasW, canvasH } = useMemo(() => {
+    const steps = activeFlow.steps || [];
+    return {
+      canvasW: Math.max(1400, ...steps.map(s => (s.x || 0) + NODE_W + 200)),
+      canvasH: Math.max(800,  ...steps.map(s => (s.y || 0) + NODE_H + 200)),
+    };
+  }, [activeFlow.steps]);
+
+  const edges       = activeFlow.edges || [];
   const selectedStep = selectedId ? findStep(selectedId, activeFlow.steps) : null;
 
   return (
-    <div className="flow-builder" onClick={() => setShowAddMenu(false)}>
+    <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); }}>
 
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      {/* ── Toolbar ── */}
       <div className="flow-toolbar">
         <div className="flow-name-wrap">
           <span className="flow-label">FLOW</span>
-          <input
-            className="flow-name-input"
-            value={activeFlow.name}
-            onChange={e => setActiveFlow(f => ({ ...f, name: e.target.value }))}
-            placeholder="Flow Name"
-          />
+          <input className="flow-name-input" value={activeFlow.name} placeholder="Flow Name"
+            onChange={e => setActiveFlow(f => ({ ...f, name: e.target.value }))} />
         </div>
         <div className="flow-toolbar-btns">
-          <button
-            className={`flow-btn run-btn${isRunning ? ' stop' : ''}`}
-            onClick={handleRun}
-          >
+          <button className={`flow-btn run-btn${isRunning ? ' stop' : ''}`} onClick={handleRun}>
             {isRunning ? '■ Stop' : '▶ Run'}
           </button>
           <button className="flow-btn" onClick={saveFlow}>💾 Save</button>
+          {/* + Step dropdown */}
+          <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button className="flow-btn" onClick={() => setShowAddMenu(m => !m)}>+ Step ▾</button>
+            {showAddMenu && (
+              <div className="flow-add-menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 300 }}>
+                {STEP_TYPES.map(t => (
+                  <button key={t.type} className="flow-add-menu-item" onClick={() => addStep(t.type)}>
+                    <span>{t.icon}</span>&nbsp;{t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button className="flow-btn" onClick={() => { setActiveFlow(mkFlow()); setSelectedId(null); setStepStatuses({}); }}>+ New</button>
           <button className="flow-btn danger-btn" onClick={deleteFlow} disabled={!activeFlow.id}>🗑 Del</button>
           <button className={`flow-btn${showVars ? ' active-btn' : ''}`} onClick={() => setShowVars(v => !v)}>
@@ -275,36 +421,27 @@ export default function FlowBuilder({ onClose }) {
         </div>
       </div>
 
-      {/* ── Variables panel ──────────────────────────────────────────────── */}
+      {/* ── Variables panel ── */}
       {showVars && (
         <div className="flow-vars-panel">
-          <div className="flow-vars-heading">
-            Variables
-            <span className="flow-vars-hint"> — use <code>{'{{name}}'}</code> in requests, URLs, params, body</span>
-          </div>
+          <div className="flow-vars-heading">Variables <span className="flow-vars-hint">— use <code>{'{{name}}'}</code> in requests</span></div>
           {Object.entries(activeFlow.variables).map(([k, v], i) => (
             <div key={i} className="flow-var-row">
-              <input className="form-input flow-var-key" placeholder="name"
-                value={k} onChange={e => setVar(k, e.target.value, v)} />
-              <input className="form-input flow-var-val" placeholder="value"
-                value={v} onChange={e => setVar(k, k, e.target.value)} />
+              <input className="form-input flow-var-key" placeholder="name"  value={k} onChange={e => setVar(k, e.target.value, v)} />
+              <input className="form-input flow-var-val" placeholder="value" value={v} onChange={e => setVar(k, k, e.target.value)} />
               {runVars[k] !== undefined && runVars[k] !== v && (
-                <span className="flow-var-live" title="Runtime value">→&nbsp;{String(runVars[k]).substring(0, 28)}</span>
+                <span className="flow-var-live" title="Runtime value">→ {String(runVars[k]).substring(0, 28)}</span>
               )}
               <button className="flow-var-del" onClick={() => delVar(k)}>✕</button>
             </div>
           ))}
           <button className="add-row-button" style={{ marginTop: 8 }} onClick={addVar}>+ Add Variable</button>
-
-          {/* Runtime snapshot */}
           {Object.keys(runVars).length > 0 && (
             <div className="flow-runtime-snap">
               <div className="flow-vars-heading" style={{ marginTop: 12 }}>Runtime snapshot</div>
               {Object.entries(runVars).map(([k, v]) => (
                 <div key={k} className="flow-runtime-row">
-                  <code>{k}</code>
-                  <span>=</span>
-                  <span className="flow-runtime-val">{String(v).substring(0, 100)}</span>
+                  <code>{k}</code> = <span className="flow-runtime-val">{String(v).substring(0, 100)}</span>
                 </div>
               ))}
             </div>
@@ -312,121 +449,133 @@ export default function FlowBuilder({ onClose }) {
         </div>
       )}
 
-      {/* ── Main ─────────────────────────────────────────────────────────── */}
+      {/* ── Main ── */}
       <div className="flow-main">
 
         {/* Saved flows list */}
         <div className="flow-list-panel">
           <div className="flow-list-title">Saved Flows</div>
-          {flows.length === 0 && <div className="flow-list-empty">No flows saved yet</div>}
+          {flows.length === 0 && <div className="flow-list-empty">No flows yet</div>}
           {flows.map(f => (
-            <div
-              key={f.id}
+            <div key={f.id}
               className={`flow-list-item${activeFlow.id === f.id ? ' active' : ''}`}
-              onClick={() => selectFlow(f)}
-            >
+              onClick={() => selectFlow(f)}>
               <div className="flow-list-name">{f.name}</div>
               <div className="flow-list-meta">{(f.steps || []).length} step{(f.steps || []).length !== 1 ? 's' : ''}</div>
             </div>
           ))}
         </div>
 
-        {/* Flow canvas */}
-        <div className="flow-canvas">
+        {/* ── Node canvas ── */}
+        <div className="flow-canvas-wrap" ref={canvasWrapRef}
+          onClick={() => setSelectedId(null)}>
           {activeFlow.steps.length === 0 && (
             <div className="flow-canvas-empty">
-              <div style={{ fontSize: 32 }}>⚡</div>
-              <div>No steps yet</div>
-              <div style={{ fontSize: 12, marginTop: 6, opacity: 0.6 }}>
-                Click "Add Step" below to start building your flow
+              <div style={{ fontSize: 36 }}>⚡</div>
+              <div>Click <strong>+ Step ▾</strong> in the toolbar to add your first step</div>
+              <div style={{ fontSize: 11, marginTop: 8, opacity: 0.5 }}>
+                Drag nodes to position · Pull the <span style={{ color: '#3b82f6' }}>●</span> handle on the right edge to connect steps
               </div>
             </div>
           )}
 
-          {activeFlow.steps.map((step, i) => {
-            const st  = stepStatuses[step.id]?.status || 'idle';
-            const err = stepStatuses[step.id]?.error;
-            return (
-              <React.Fragment key={step.id}>
-                {i > 0 && (
-                  <div className={`flow-connector${isRunning && st === 'running' ? ' pulse' : ''}`} />
-                )}
-                <div
-                  className={[
-                    'flow-step-card',
-                    selectedId === step.id ? 'selected' : '',
-                    `st-${st}`,
-                    !step.enabled ? 'step-disabled' : '',
-                    dragOver === i ? 'drag-over' : '',
-                  ].filter(Boolean).join(' ')}
-                  draggable
-                  onDragStart={e => onDragStart(e, i)}
-                  onDragOver={e => onDragOver(e, i)}
-                  onDrop={e => onDrop(e, i)}
-                  onDragEnd={onDragEnd}
-                  onClick={e => { e.stopPropagation(); setSelectedId(step.id); }}
-                  title={err || ''}
-                >
-                  <span className="step-drag-handle" title="Drag to reorder">⠿</span>
-                  <span className="step-type-icon">{TYPE_META[step.type]?.icon || '?'}</span>
-                  <div className="step-card-body">
-                    <div className="step-card-name">{step.name || step.type}</div>
-                    <div className="step-card-desc">{stepDesc(step)}</div>
-                    {err && <div className="step-card-err">{err}</div>}
-                  </div>
-                  <StatusIcon status={st} />
-                  {step.type === 'condition' && st === 'success' && stepStatuses[step.id]?.result?.conditionMet !== undefined && (
-                    <span className={`flow-branch-pill ${stepStatuses[step.id].result.conditionMet ? 'then' : 'else'}`}>
-                      {stepStatuses[step.id].result.conditionMet ? 'THEN' : 'ELSE'}
-                    </span>
-                  )}
-                  <button
-                    className="step-del-btn"
-                    onClick={e => { e.stopPropagation(); removeStep(step.id); }}
-                    title="Delete step"
-                  >✕</button>
-                </div>
-              </React.Fragment>
-            );
-          })}
+          <div className="flow-canvas-area" style={{ width: canvasW, height: canvasH }}>
+            {/* SVG edge layer */}
+            <svg className="flow-edges-svg" width={canvasW} height={canvasH}>
+              <ArrowDefs />
 
-          {/* Add step */}
-          <div className="flow-add-area" onClick={e => e.stopPropagation()}>
-            <button className="flow-add-step-btn" onClick={() => setShowAddMenu(m => !m)}>
-              + Add Step
-            </button>
-            {showAddMenu && (
-              <div className="flow-add-menu">
-                {STEP_TYPES.map(t => (
-                  <button key={t.type} className="flow-add-menu-item" onClick={() => addStep(t.type)}>
-                    <span>{t.icon}</span>&nbsp;{t.label}
-                  </button>
-                ))}
-              </div>
-            )}
+              {/* Existing edges */}
+              {edges.map(edge => {
+                const from = activeFlow.steps.find(s => s.id === edge.from);
+                const to   = activeFlow.steps.find(s => s.id === edge.to);
+                if (!from || !to) return null;
+
+                let y1 = (from.y || 0) + NODE_H / 2;
+                if (from.type === 'condition') {
+                  y1 = edge.label === 'else'
+                    ? (from.y || 0) + NODE_H * 0.72
+                    : (from.y || 0) + NODE_H * 0.28;
+                }
+                const x1 = (from.x || 0) + NODE_W + 8;
+                const x2 = to.x || 0;
+                const y2 = (to.y || 0) + NODE_H / 2;
+                const d  = bezier(x1, y1, x2, y2);
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2;
+                const isSel = selectedEdge === edge.id;
+                const mark = edge.label === 'then' ? 'am-then' : edge.label === 'else' ? 'am-else' : isSel ? 'am-sel' : 'am-default';
+                const stroke = edge.label === 'then' ? '#16a34a' : edge.label === 'else' ? '#dc2626' : isSel ? '#3b82f6' : '#94a3b8';
+
+                return (
+                  <g key={edge.id}
+                    onClick={e => { e.stopPropagation(); setSelectedEdge(isSel ? null : edge.id); }}>
+                    {/* Wide invisible hit area */}
+                    <path d={d} fill="none" stroke="transparent" strokeWidth={14}
+                      style={{ cursor: 'pointer', pointerEvents: 'all' }} />
+                    {/* Visible arrow */}
+                    <path d={d} fill="none" stroke={stroke}
+                      strokeWidth={isSel ? 2.5 : 1.8}
+                      markerEnd={`url(#${mark})`} />
+                    {/* Branch label */}
+                    {edge.label && (
+                      <text x={mx} y={my - 7} textAnchor="middle" fontSize={9} fontWeight={700}
+                        fill={stroke} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                        {edge.label.toUpperCase()}
+                      </text>
+                    )}
+                    {/* Delete button when selected */}
+                    {isSel && (
+                      <g style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                        onClick={e => { e.stopPropagation(); removeEdge(edge.id); }}>
+                        <circle cx={mx} cy={my} r={9} fill="#dc2626" />
+                        <text x={mx} y={my + 4} textAnchor="middle" fontSize={12}
+                          fill="white" fontWeight={700} style={{ pointerEvents: 'none' }}>×</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* In-progress connection line */}
+              {connLine && (
+                <line x1={connLine.x1} y1={connLine.y1} x2={connLine.x2} y2={connLine.y2}
+                  stroke="#3b82f6" strokeWidth={2} strokeDasharray="6,4"
+                  markerEnd="url(#am-live)" style={{ pointerEvents: 'none' }} />
+              )}
+            </svg>
+
+            {/* Step nodes */}
+            {activeFlow.steps.map(step => (
+              <StepNode
+                key={step.id}
+                step={step}
+                selected={selectedId === step.id}
+                stepStatus={stepStatuses[step.id] || {}}
+                onSelect={() => setSelectedId(step.id)}
+                onDelete={() => removeStep(step.id)}
+                onMoveStep={moveStep}
+                onConnectStart={handleConnectStart}
+                onConnectTarget={handleConnectTarget}
+                isTarget={!!connLine && connTarget === step.id && connTarget !== connectFromRef.current?.fromId}
+              />
+            ))}
           </div>
         </div>
 
         {/* Step editor panel */}
         <div className="flow-editor-panel">
-          {selectedStep
-            ? (
-              <FlowStepEditor
-                step={selectedStep}
-                onUpdate={updateStep}
-                stepStatuses={stepStatuses}
-              />
-            )
-            : (
-              <div className="step-editor-empty">
-                <div style={{ fontSize: 24 }}>✏️</div>
-                <div>Select a step to edit</div>
-                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.5 }}>Click any step card in the canvas</div>
-              </div>
-            )
-          }
+          {selectedStep ? (
+            <FlowStepEditor step={selectedStep} onUpdate={updateStep} stepStatuses={stepStatuses} />
+          ) : (
+            <div className="step-editor-empty">
+              <div style={{ fontSize: 24 }}>✏️</div>
+              <div>Select a step to edit</div>
+              <div style={{ fontSize: 11, marginTop: 6, opacity: 0.5 }}>Click any node on the canvas</div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+

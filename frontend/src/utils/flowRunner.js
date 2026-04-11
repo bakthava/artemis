@@ -126,11 +126,16 @@ export async function runFlow(flow, onUpdate, signal) {
   async function runStep(step) {
     if (signal?.aborted) throw new Error('Aborted');
     if (step.enabled === false) {
-      onUpdate(step.id, { status: 'skipped' });
+      onUpdate(step.id, { status: 'skipped', logs: [{ level: 'info', msg: 'Step disabled — skipped' }] });
       return;
     }
 
-    onUpdate(step.id, { status: 'running', variables: { ...variables } });
+    const stepStart = performance.now();
+    const logs = [];
+    function log(level, msg) { logs.push({ level, msg, t: Math.round(performance.now() - stepStart) }); }
+
+    onUpdate(step.id, { status: 'running', variables: { ...variables }, logs: [] });
+    log('info', `Starting step "${step.name || step.type}"`);
 
     try {
       switch (step.type) {
@@ -138,75 +143,105 @@ export async function runFlow(flow, onUpdate, signal) {
         // ── HTTP Request ──────────────────────────────────────────────────
         case 'request': {
           const req = substituteRequest(step.request, variables);
+          log('info', `→ ${req.method} ${req.url}`);
+          const reqStart = performance.now();
           const response = await api.request.execute(req);
+          const reqMs = Math.round(performance.now() - reqStart);
+          log('info', `← HTTP ${response.statusCode} in ${reqMs} ms`);
 
-          // Extract variables from response first
+          // Extract variables from response
+          const extractedVars = {};
           for (const ex of step.extractions || []) {
             if (ex.variable) {
-              variables[ex.variable] = extractValue(ex, response);
+              const val = extractValue(ex, response);
+              variables[ex.variable] = val;
+              extractedVars[ex.variable] = val;
+              log('info', `  Extracted "${ex.variable}" = ${JSON.stringify(val)}`);
             }
           }
 
-          // Then run assertions
+          // Run assertions
           const assertResults = runAssertions(step.assertions || [], response);
+          assertResults.forEach(r => {
+            log(r.passed ? 'info' : 'error',
+              `  Assert ${r.source}${r.header ? `[${r.header}]` : ''} ${r.operator} "${r.expected}" → ${r.passed ? 'PASS' : `FAIL (got: "${String(r.actual || '').substring(0, 80)}")`}`
+            );
+          });
+
+          const durationMs = Math.round(performance.now() - stepStart);
           const failed = assertResults.filter(r => !r.passed);
-          const result = { response, assertionResults: assertResults, statusCode: response.statusCode };
+          const result = { response, assertionResults: assertResults, statusCode: response.statusCode, reqMs, extractedVars };
 
           if (failed.length > 0) {
             const msg = `${failed.length} assertion(s) failed`;
-            onUpdate(step.id, { status: 'failed', result, error: msg, variables: { ...variables } });
+            log('error', `✗ ${msg} — total ${durationMs} ms`);
+            onUpdate(step.id, { status: 'failed', result, error: msg, variables: { ...variables }, logs, durationMs });
             throw new Error(msg);
           }
-          onUpdate(step.id, { status: 'success', result, variables: { ...variables } });
+          log('info', `✓ Done in ${durationMs} ms`);
+          onUpdate(step.id, { status: 'success', result, variables: { ...variables }, logs, durationMs });
           break;
         }
 
         // ── Condition ─────────────────────────────────────────────────────
         case 'condition': {
           const conditionMet = evaluateCondition(step.condition, variables);
-          onUpdate(step.id, { status: 'success', result: { conditionMet }, variables: { ...variables } });
-          const branch = conditionMet ? (step.thenSteps || []) : (step.elseSteps || []);
-          for (const child of branch) {
+          const branch = conditionMet ? 'THEN' : 'ELSE';
+          log('info', `Condition → ${branch} (left="${substitute(step.condition?.left||'',variables)}", op=${step.condition?.operator}, right="${substitute(step.condition?.right||'',variables)}")`);
+          const durationMs = Math.round(performance.now() - stepStart);
+          log('info', `✓ Done in ${durationMs} ms`);
+          onUpdate(step.id, { status: 'success', result: { conditionMet }, variables: { ...variables }, logs, durationMs });
+          const branchSteps = conditionMet ? (step.thenSteps || []) : (step.elseSteps || []);
+          for (const child of branchSteps) {
             await runStep(child);
           }
-          break;
+          return { conditionMet };
         }
 
         // ── Loop ──────────────────────────────────────────────────────────
         case 'loop': {
-          onUpdate(step.id, { status: 'running', variables: { ...variables } });
           if (step.loopType === 'while') {
             let itr = 0;
+            log('info', `While loop (max 100 iterations)`);
             while (evaluateCondition(step.loopCondition, variables) && itr < 100) {
               variables['_loopIndex'] = String(itr);
+              log('info', `  Iteration ${itr}`);
               for (const child of step.loopSteps || []) {
                 await runStep(child);
                 if (signal?.aborted) throw new Error('Aborted');
               }
               itr++;
             }
+            log('info', `Loop ended after ${itr} iteration(s)`);
           } else {
-            // count loop (default)
             const count = Math.max(1, step.loopCount || 1);
+            log('info', `Count loop — ${count} iteration(s)`);
             for (let i = 0; i < count; i++) {
               variables['_loopIndex'] = String(i);
+              log('info', `  Iteration ${i}`);
               for (const child of step.loopSteps || []) {
                 await runStep(child);
                 if (signal?.aborted) throw new Error('Aborted');
               }
             }
           }
-          onUpdate(step.id, { status: 'success', result: {}, variables: { ...variables } });
+          const durationMs = Math.round(performance.now() - stepStart);
+          log('info', `✓ Done in ${durationMs} ms`);
+          onUpdate(step.id, { status: 'success', result: {}, variables: { ...variables }, logs, durationMs });
           break;
         }
 
         // ── Delay ─────────────────────────────────────────────────────────
         case 'delay': {
+          const ms = step.delayMs || 1000;
+          log('info', `Waiting ${ms} ms…`);
           await new Promise((resolve, reject) => {
-            const t = setTimeout(resolve, step.delayMs || 1000);
+            const t = setTimeout(resolve, ms);
             signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('Aborted')); });
           });
-          onUpdate(step.id, { status: 'success', result: {} });
+          const durationMs = Math.round(performance.now() - stepStart);
+          log('info', `✓ Delay complete (${durationMs} ms)`);
+          onUpdate(step.id, { status: 'success', result: { delayMs: ms }, logs, durationMs });
           break;
         }
 
@@ -214,10 +249,15 @@ export async function runFlow(flow, onUpdate, signal) {
         case 'set_variable': {
           const value = substitute(step.variableValue || '', variables);
           if (step.variableName) variables[step.variableName] = value;
+          log('info', `Set "${step.variableName}" = ${JSON.stringify(value)}`);
+          const durationMs = Math.round(performance.now() - stepStart);
+          log('info', `✓ Done in ${durationMs} ms`);
           onUpdate(step.id, {
             status: 'success',
             result: { variable: step.variableName, value },
             variables: { ...variables },
+            logs,
+            durationMs,
           });
           break;
         }
@@ -225,28 +265,90 @@ export async function runFlow(flow, onUpdate, signal) {
         // ── Assert ────────────────────────────────────────────────────────
         case 'assert': {
           const passed = evaluateCondition(step.assertCondition, variables);
+          const durationMs = Math.round(performance.now() - stepStart);
           if (!passed) {
             const msg = step.assertMessage || 'Assertion failed';
-            onUpdate(step.id, { status: 'failed', result: {}, error: msg });
+            log('error', `✗ ${msg}`);
+            onUpdate(step.id, { status: 'failed', result: {}, error: msg, logs, durationMs });
             throw new Error(msg);
           }
-          onUpdate(step.id, { status: 'success', result: {} });
+          log('info', `✓ Assertion passed in ${durationMs} ms`);
+          onUpdate(step.id, { status: 'success', result: {}, logs, durationMs });
           break;
         }
 
-        default:
-          onUpdate(step.id, { status: 'success', result: {} });
+        default: {
+          const durationMs = Math.round(performance.now() - stepStart);
+          onUpdate(step.id, { status: 'success', result: {}, logs, durationMs });
+        }
       }
     } catch (err) {
-      // Only set failed if not already set (request step sets it explicitly)
+      const durationMs = Math.round(performance.now() - stepStart);
+      log('error', `✗ ${err.message}`);
       onUpdate(step.id, prev =>
-        prev?.status === 'failed' ? prev : { status: 'failed', error: err.message }
+        prev?.status === 'failed' ? { ...prev, logs, durationMs } : { status: 'failed', error: err.message, logs, durationMs }
       );
       throw err;
     }
   }
 
-  for (const step of flow.steps || []) {
-    await runStep(step);
+  // ── Edge-following execution ──────────────────────────────────────────────
+  const edges    = flow.edges || [];
+  const topSteps = flow.steps || [];
+
+  // Index ALL steps (including nested) by id
+  const stepMap = {};
+  function indexSteps(arr) {
+    arr.forEach(s => {
+      stepMap[s.id] = s;
+      indexSteps([...(s.thenSteps||[]), ...(s.elseSteps||[]), ...(s.loopSteps||[])]);
+    });
+  }
+  indexSteps(topSteps);
+
+  // No edges → run in array order (backward-compatible)
+  if (edges.length === 0) {
+    for (const step of topSteps) { await runStep(step); }
+    return;
+  }
+
+  // Build adjacency: stepId → [{to, label}]
+  const topIds  = new Set(topSteps.map(s => s.id));
+  const nextMap = {};
+  edges.forEach(e => {
+    if (!topIds.has(e.from)) return;
+    if (!nextMap[e.from]) nextMap[e.from] = [];
+    nextMap[e.from].push({ to: e.to, label: e.label || '' });
+  });
+
+  // Entry steps = top-level steps with no incoming edge
+  const hasIncoming = new Set(edges.filter(e => topIds.has(e.to)).map(e => e.to));
+  const entrySteps  = topSteps.filter(s => !hasIncoming.has(s.id));
+
+  // Follow edges with cycle protection
+  const visited = new Set();
+  async function executeFrom(stepId) {
+    if (visited.has(stepId) || signal?.aborted) return;
+    visited.add(stepId);
+    const step = stepMap[stepId];
+    if (!step) return;
+    const result = await runStep(step);
+    const nexts  = nextMap[stepId] || [];
+    if (!nexts.length) return;
+    if (step.type === 'condition' && result?.conditionMet !== undefined) {
+      const label = result.conditionMet ? 'then' : 'else';
+      const next  = nexts.find(n => n.label === label) || nexts[0];
+      if (next) await executeFrom(next.to);
+    } else {
+      for (const n of nexts) {
+        if (signal?.aborted) break;
+        await executeFrom(n.to);
+      }
+    }
+  }
+
+  for (const entry of entrySteps) {
+    if (signal?.aborted) break;
+    await executeFrom(entry.id);
   }
 }

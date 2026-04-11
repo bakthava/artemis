@@ -32,7 +32,8 @@ body {
     sans-serif;
 }
 
-#app {
+#app,
+#root {
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -1599,4 +1600,264 @@ html.dark .toast-error {
 
 /* Spin animation reused in flow */
 .spin-icon { display: inline-block; animation: spin 0.9s linear infinite; }
+
+/* ────────────────────────────────────────────────────────────
+   Step card timing badges
+──────────────────────────────────────────────────────────── */
+.step-timing-badge {
+  font-size: 10px; font-family: monospace;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.step-http-badge {
+  font-size: 10px; font-weight: 700; font-family: monospace;
+  color: #16a34a;
+  background: rgba(22,163,74,0.1);
+  border: 1px solid rgba(22,163,74,0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.step-http-badge.err {
+  color: #dc2626;
+  background: rgba(220,38,38,0.1);
+  border-color: rgba(220,38,38,0.3);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Step result panel (logs, timing, assertions inside editor)
+──────────────────────────────────────────────────────────── */
+.step-result-panel {
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 14px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.step-result-panel.status-running { border-color: #3b82f6; }
+.step-result-panel.status-success { border-color: #16a34a; }
+.step-result-panel.status-failed  { border-color: #dc2626; }
+.step-result-panel.status-skipped { border-color: var(--border-color); opacity: 0.7; }
+
+/* Header row */
+.srp-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  flex-wrap: wrap;
+}
+.srp-status-icon { font-size: 14px; flex-shrink: 0; }
+.status-running .srp-status-icon { color: #3b82f6; }
+.status-success .srp-status-icon { color: #16a34a; }
+.status-failed  .srp-status-icon { color: #dc2626; }
+.status-skipped .srp-status-icon { color: var(--text-secondary); }
+.srp-status-label { font-weight: 600; color: var(--text-primary); flex: 1; }
+.srp-http-code {
+  font-family: monospace; font-size: 11px; font-weight: 700;
+  color: #16a34a;
+  background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3);
+  border-radius: 4px; padding: 1px 6px;
+}
+.status-failed .srp-http-code { color: #dc2626; background: rgba(220,38,38,0.1); border-color: rgba(220,38,38,0.3); }
+.srp-duration {
+  font-family: monospace; font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+}
+.srp-req-ms { color: #3b82f6; border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.05); }
+
+/* Sections */
+.srp-section {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+}
+.srp-sec-title {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.6px; color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+/* Extracted vars */
+.srp-var-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 12px; }
+.srp-var-key { font-family: monospace; color: #3b82f6; font-weight: 600; }
+.srp-var-eq  { color: var(--text-secondary); }
+.srp-var-val { font-family: monospace; color: var(--text-primary); word-break: break-all; }
+
+/* Assertion rows */
+.srp-assert-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 3px; font-size: 12px; }
+.srp-assert-icon { flex-shrink: 0; font-weight: 700; }
+.srp-assert-row.pass .srp-assert-icon { color: #16a34a; }
+.srp-assert-row.fail .srp-assert-icon { color: #dc2626; }
+.srp-assert-desc { flex: 1; color: var(--text-primary); }
+.srp-assert-actual { color: #dc2626; }
+
+/* Condition result */
+.srp-cond-result { font-size: 12px; }
+.srp-cond-result.pass { color: #16a34a; }
+.srp-cond-result.else { color: #f59e0b; }
+
+/* Execution logs */
+.srp-logs {
+  font-family: monospace; font-size: 11px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+.srp-log-row { display: flex; align-items: flex-start; gap: 8px; padding: 1px 0; line-height: 1.5; }
+.srp-log-t { flex-shrink: 0; color: var(--text-secondary); min-width: 48px; }
+.srp-log-msg { flex: 1; white-space: pre-wrap; word-break: break-all; }
+.srp-log-row.log-info  .srp-log-msg { color: var(--text-primary); }
+.srp-log-row.log-error .srp-log-msg { color: #dc2626; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Free-position node canvas
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Scrollable canvas wrapper — replaces old .flow-canvas */
+.flow-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--bg-primary);
+  background-image: radial-gradient(var(--border-color) 1px, transparent 0);
+  background-size: 24px 24px;
+  cursor: default;
+}
+.flow-canvas-area {
+  position: relative;
+  min-width: 1400px;
+  min-height: 800px;
+}
+/* SVG layer for edges — sits above canvas, below nodes */
+.flow-edges-svg {
+  position: absolute;
+  top: 0; left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ── Step node card ─────────────────────────────────────────────────────── */
+.flow-node {
+  position: absolute;
+  display: flex;
+  align-items: stretch;
+  width: 220px;
+  min-height: 68px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  z-index: 10;
+}
+.flow-node:active { cursor: grabbing; }
+.flow-node:hover  { border-color: var(--primary-color); z-index: 20; }
+.flow-node.fn-selected { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(59,130,246,0.18); z-index: 20; }
+.flow-node.fn-running  { border-color: #3b82f6; animation: fnRunPulse 0.8s ease-in-out infinite alternate; }
+.flow-node.fn-success  { border-color: #16a34a; }
+.flow-node.fn-failed   { border-color: #dc2626; }
+.flow-node.fn-skipped  { opacity: 0.5; }
+.flow-node.fn-disabled { opacity: 0.45; }
+.flow-node.fn-target   { border-color: #3b82f6; box-shadow: 0 0 0 5px rgba(59,130,246,0.25); }
+@keyframes fnRunPulse {
+  from { box-shadow: 0 0 0 0 rgba(59,130,246,0.55); }
+  to   { box-shadow: 0 0 0 7px rgba(59,130,246,0.0); }
+}
+
+/* Left colored icon strip */
+.fn-strip {
+  width: 36px;
+  flex-shrink: 0;
+  border-radius: 6px 0 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fn-icon { font-size: 16px; line-height: 1; }
+
+/* Main body */
+.fn-body {
+  flex: 1;
+  padding: 7px 8px 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.fn-name   { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fn-desc   { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; font-family: monospace; }
+.fn-err    { font-size: 10px; color: #dc2626; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fn-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.fn-http   { font-size: 9px; font-weight: 700; font-family: monospace; color: #16a34a; background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3); border-radius: 3px; padding: 0 4px; }
+.fn-http.fn-http-err { color: #dc2626; background: rgba(220,38,38,0.1); border-color: rgba(220,38,38,0.3); }
+.fn-timing { font-size: 9px; color: var(--text-secondary); font-family: monospace; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 3px; padding: 0 4px; }
+
+/* Right status icon */
+.fn-status { display: flex; align-items: center; justify-content: center; padding: 0 7px 0 4px; flex-shrink: 0; font-size: 14px; }
+
+/* Delete button (shows on hover, top-right corner) */
+.node-del-btn {
+  position: absolute;
+  top: -8px; right: -8px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #dc2626; color: #fff; border: none;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0;
+  transition: opacity 0.12s; z-index: 30; padding: 0;
+}
+.flow-node:hover .node-del-btn { opacity: 1; }
+
+/* Connection handles — right edge dots, appear on hover */
+.conn-handle {
+  position: absolute;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid #3b82f6;
+  background: var(--bg-primary);
+  cursor: crosshair;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.1s, transform 0.1s;
+  z-index: 30;
+}
+.flow-node:hover .conn-handle { opacity: 1; }
+.conn-handle:hover              { background: #3b82f6; }
+
+/* Single handle (non-condition steps) */
+.hnd-main  { right: -8px; top: 50%; transform: translateY(-50%); }
+.hnd-main:hover  { transform: translateY(-50%) scale(1.3); }
+
+/* Two handles for condition THEN/ELSE */
+.hnd-then  { right: -8px; top: 28%; transform: translateY(-50%); border-color: #16a34a; }
+.hnd-then:hover  { background: #16a34a; transform: translateY(-50%) scale(1.3); }
+.hnd-else  { right: -8px; top: 72%; transform: translateY(-50%); border-color: #dc2626; }
+.hnd-else:hover  { background: #dc2626; transform: translateY(-50%) scale(1.3); }
+
+/* Canvas empty state */
+.flow-canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--text-secondary); font-size: 13px;
+  text-align: center; pointer-events: none; gap: 6px;
+}
+
+/* Override old .flow-add-menu position for toolbar usage */
+.flow-toolbar-btns .flow-add-menu {
+  position: absolute; top: 100%; left: 0;
+  transform: none;
+  margin-top: 4px;
+}
 

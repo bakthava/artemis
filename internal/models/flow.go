@@ -34,12 +34,23 @@ type StepCondition struct {
 	Right    string `json:"right"`
 }
 
+// FlowEdge represents a directed connection between two top-level flow steps
+type FlowEdge struct {
+	ID    string `json:"id"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Label string `json:"label,omitempty"` // "then", "else", or empty
+}
+
 // FlowStep represents a single step in a flow
 type FlowStep struct {
 	ID      string `json:"id"`
 	Type    string `json:"type"` // request, condition, loop, delay, set_variable, assert
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
+	// Canvas position
+	X int `json:"x"`
+	Y int `json:"y"`
 
 	// request step fields
 	Request     *RequestStep `json:"request,omitempty"`
@@ -74,6 +85,7 @@ type Flow struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
 	Steps     []FlowStep        `json:"steps"`
+	Edges     []FlowEdge        `json:"edges,omitempty"`
 	Variables map[string]string `json:"variables"`
 	CreatedAt int64             `json:"createdAt"`
 	UpdatedAt int64             `json:"updatedAt"`
