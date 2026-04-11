@@ -617,6 +617,8 @@ export default function FlowBuilder({ onClose }) {
 
   const edges       = activeFlow.edges || [];
   const selectedStep = selectedId ? findStep(selectedId, activeFlow.steps) : null;
+  const startStep = (activeFlow.steps || []).find(s => s.type === 'start') || null;
+  const startConfigStep = selectedStep?.type === 'start' ? selectedStep : startStep;
 
   return (
     <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); }}>
@@ -803,7 +805,7 @@ export default function FlowBuilder({ onClose }) {
 
         {/* Step editor panel */}
         <div className="flow-editor-panel">
-          {selectedStep?.type === 'start' ? (
+          {(selectedStep?.type === 'start' || !selectedStep) && startConfigStep ? (
             <div className="flow-start-editor">
               <div className="editor-header" style={{marginBottom: 16}}>
                 <h3 style={{margin: 0}}>⚙️ Flow Start Config</h3>
@@ -812,42 +814,42 @@ export default function FlowBuilder({ onClose }) {
                 <div className="editor-sec-title">Execution Mode</div>
                 <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
                   <button 
-                    className={`mode-btn ${selectedStep?.mode !== 'performance' ? 'active' : ''}`}
-                    onClick={() => updateStep({...selectedStep, mode: 'functional'})}
+                    className={`mode-btn ${startConfigStep?.mode !== 'performance' ? 'active' : ''}`}
+                    onClick={() => updateStep({...startConfigStep, mode: 'functional'})}
                   >
                     🟢 Functional (1 user)
                   </button>
                   <button 
-                    className={`mode-btn ${selectedStep?.mode === 'performance' ? 'active' : ''}`}
-                    onClick={() => updateStep({...selectedStep, mode: 'performance'})}
+                    className={`mode-btn ${startConfigStep?.mode === 'performance' ? 'active' : ''}`}
+                    onClick={() => updateStep({...startConfigStep, mode: 'performance'})}
                   >
                     ⚡ Performance (Load Test)
                   </button>
                 </div>
               </div>
 
-              {selectedStep?.mode === 'performance' && (
+              {startConfigStep?.mode === 'performance' && (
                 <>
                   <div className="editor-section">
                     <label className="editor-sec-title">Number of Concurrent Users</label>
                     <div style={{display: 'flex', gap: 8, alignItems: 'center', marginTop: 6}}>
-                      <input type="number" min="1" max="100" value={selectedStep?.numUsers || 1}
+                      <input type="number" min="1" max="100" value={startConfigStep?.numUsers || 1}
                         onChange={e => {
                           const val = Math.min(100, Math.max(1, parseInt(e.target.value) || 1));
-                          updateStep({...selectedStep, numUsers: val});
+                          updateStep({...startConfigStep, numUsers: val});
                         }}
                         className="form-input" style={{flex: 1}} />
                       <span style={{fontSize: 11, color: '#94a3b8'}}>/ 100 max</span>
                     </div>
-                    {(selectedStep?.numUsers || 1) > 100 && (
+                    {(startConfigStep?.numUsers || 1) > 100 && (
                       <div style={{fontSize: 11, color: '#dc2626', marginTop: 6}}>⚠️ Maximum 100 users allowed</div>
                     )}
                   </div>
 
                   <div className="editor-section">
                     <label className="editor-sec-title">Ramp-up Time (seconds)</label>
-                    <input type="number" min="0" value={selectedStep?.rampUpSeconds || 0}
-                      onChange={e => updateStep({...selectedStep, rampUpSeconds: parseInt(e.target.value) || 0})}
+                    <input type="number" min="0" value={startConfigStep?.rampUpSeconds || 0}
+                      onChange={e => updateStep({...startConfigStep, rampUpSeconds: parseInt(e.target.value) || 0})}
                       className="form-input" style={{marginTop: 6}} />
                     <div className="sec-hint">Time to spawn all users gradually (0 = instant)</div>
                   </div>
@@ -856,31 +858,31 @@ export default function FlowBuilder({ onClose }) {
                     <div className="editor-sec-title">Execution Duration</div>
                     <div style={{display: 'flex', gap: 8, marginTop: 8, marginBottom: 12}}>
                       <button 
-                        className={`mode-btn ${selectedStep?.durationMode !== 'transactions' ? 'active' : ''}`}
-                        onClick={() => updateStep({...selectedStep, durationMode: 'duration'})}
+                        className={`mode-btn ${startConfigStep?.durationMode !== 'transactions' ? 'active' : ''}`}
+                        onClick={() => updateStep({...startConfigStep, durationMode: 'duration'})}
                       >
                         By Time
                       </button>
                       <button 
-                        className={`mode-btn ${selectedStep?.durationMode === 'transactions' ? 'active' : ''}`}
-                        onClick={() => updateStep({...selectedStep, durationMode: 'transactions'})}
+                        className={`mode-btn ${startConfigStep?.durationMode === 'transactions' ? 'active' : ''}`}
+                        onClick={() => updateStep({...startConfigStep, durationMode: 'transactions'})}
                       >
                         By Transactions
                       </button>
                     </div>
 
-                    {selectedStep?.durationMode !== 'transactions' ? (
+                    {startConfigStep?.durationMode !== 'transactions' ? (
                       <>
                         <label className="editor-sec-title">Duration (seconds)</label>
-                        <input type="number" min="1" value={selectedStep?.durationSeconds || 60}
-                          onChange={e => updateStep({...selectedStep, durationSeconds: parseInt(e.target.value) || 60})}
+                        <input type="number" min="1" value={startConfigStep?.durationSeconds || 60}
+                          onChange={e => updateStep({...startConfigStep, durationSeconds: parseInt(e.target.value) || 60})}
                           className="form-input" style={{marginTop: 6}} />
                       </>
                     ) : (
                       <>
                         <label className="editor-sec-title">Transactions per User</label>
-                        <input type="number" min="1" value={selectedStep?.transactionsCount || 1}
-                          onChange={e => updateStep({...selectedStep, transactionsCount: parseInt(e.target.value) || 1})}
+                        <input type="number" min="1" value={startConfigStep?.transactionsCount || 1}
+                          onChange={e => updateStep({...startConfigStep, transactionsCount: parseInt(e.target.value) || 1})}
                           className="form-input" style={{marginTop: 6}} />
                       </>
                     )}
