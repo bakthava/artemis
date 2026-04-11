@@ -1798,6 +1798,47 @@ html.dark .toast-error {
   to   { box-shadow: 0 0 0 7px rgba(59,130,246,0.0); }
 }
 
+/* START and END special nodes */
+.flow-start-node, .flow-end-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 80px;
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.04));
+  cursor: default;
+  user-select: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  z-index: 12;
+}
+.flow-start-node:hover, .flow-end-node:hover { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.flow-start-node.fn-selected, .flow-end-node.fn-selected { border-color: #0ea5e9; box-shadow: 0 0 0 4px rgba(59,130,246,0.25); }
+.flow-start-node.fn-target, .flow-end-node.fn-target { border-color: #0ea5e9; box-shadow: 0 0 0 5px rgba(59,130,246,0.3); }
+
+.start-icon, .end-icon { font-size: 28px; line-height: 1; margin-bottom: 4px; }
+.start-label, .end-label { font-size: 11px; font-weight: 600; text-align: center; color: var(--text-primary); }
+
+/* Mode buttons in START editor */
+.mode-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+  font-weight: 500;
+}
+.mode-btn:hover { border-color: var(--primary-color); color: var(--text-primary); }
+.mode-btn.active { border-color: var(--primary-color); background: rgba(59,130,246,0.1); color: var(--primary-color); font-weight: 700; }
+
+
 /* Left colored icon strip */
 .fn-strip {
   width: 36px;

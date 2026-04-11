@@ -42,6 +42,23 @@ type FlowEdge struct {
 	Label string `json:"label,omitempty"` // "then", "else", or empty
 }
 
+// FlowStart configures flow execution mode (functional single-user or performance load test)
+type FlowStart struct {
+	ID                string `json:"id"`
+	Mode              string `json:"mode"` // "functional" or "performance"
+	NumUsers          int    `json:"numUsers,omitempty"`
+	RampUpSeconds     int    `json:"rampUpSeconds,omitempty"`
+	DurationMode      string `json:"durationMode,omitempty"` // "duration" or "transactions"
+	DurationSeconds   int    `json:"durationSeconds,omitempty"`
+	TransactionsCount int    `json:"transactionsCount,omitempty"` // per user
+}
+
+// FlowEnd marks the end of a flow
+type FlowEnd struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
 // FlowStep represents a single step in a flow
 type FlowStep struct {
 	ID      string `json:"id"`
@@ -84,6 +101,8 @@ type FlowStep struct {
 type Flow struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
+	Start     *FlowStart        `json:"start,omitempty"`
+	End       *FlowEnd          `json:"end,omitempty"`
 	Steps     []FlowStep        `json:"steps"`
 	Edges     []FlowEdge        `json:"edges,omitempty"`
 	Variables map[string]string `json:"variables"`

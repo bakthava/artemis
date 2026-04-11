@@ -38,7 +38,15 @@ function mkStep(type, x, y) {
 }
 
 function mkFlow() {
-  return { id: '', name: 'New Flow', steps: [], edges: [], variables: {} };
+  return {
+    id: '',
+    name: 'New Flow',
+    start: { id: 'start', mode: 'functional', numUsers: 1, rampUpSeconds: 0, durationMode: 'duration', durationSeconds: 60, transactionsCount: 1 },
+    end: { id: 'end', name: 'Flow End' },
+    steps: [],
+    edges: [],
+    variables: {},
+  };
 }
 
 function stepDesc(step) {
@@ -104,6 +112,44 @@ const ArrowDefs = () => (
     ))}
   </defs>
 );
+
+// ── START node (fixed at top, non-draggable) ───────────────────────────────────
+function StartNode({ start, selected, onSelect, onConnectStart, onConnectTarget, isTarget }) {
+  const x = 40;
+  const y = 30;
+  return (
+    <div
+      className={['flow-start-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
+      style={{ left: x, top: y }}
+      onMouseEnter={() => onConnectTarget('start')}
+      onMouseLeave={() => onConnectTarget(null)}
+      onClick={e => { e.stopPropagation(); onSelect(); }}
+    >
+      <div className="start-icon">▶</div>
+      <div className="start-label">{start?.mode === 'performance' ? '⚡ Performance' : '🟢 Functional'}</div>
+      <div className="conn-handle hnd-main" title="Connect first step →"
+        onMouseDown={e => { e.stopPropagation(); e.preventDefault(); onConnectStart('start', '', e); }} />
+    </div>
+  );
+}
+
+// ── END node (fixed at bottom, non-draggable) ─────────────────────────────────
+function EndNode({ canvasH, selected, onSelect, onConnectTarget, isTarget }) {
+  const x = 40;
+  const y = Math.max(350, canvasH - 80); // near bottom
+  return (
+    <div
+      className={['flow-end-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
+      style={{ left: x, top: y }}
+      onMouseEnter={() => onConnectTarget('end')}
+      onMouseLeave={() => onConnectTarget(null)}
+      onClick={e => { e.stopPropagation(); onSelect(); }}
+    >
+      <div className="end-icon">⏹</div>
+      <div className="end-label">Flow End</div>
+    </div>
+  );
+}
 
 // ── Step node ─────────────────────────────────────────────────────────────────
 function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, isTarget }) {
@@ -544,6 +590,25 @@ export default function FlowBuilder({ onClose }) {
               )}
             </svg>
 
+            {/* START node */}
+            <StartNode
+              start={activeFlow.start}
+              selected={selectedId === 'start'}
+              onSelect={() => setSelectedId('start')}
+              onConnectStart={handleConnectStart}
+              onConnectTarget={handleConnectTarget}
+              isTarget={!!connLine && connTarget === 'start' && connTarget !== connectFromRef.current?.fromId}
+            />
+
+            {/* END node */}
+            <EndNode
+              canvasH={canvasH}
+              selected={selectedId === 'end'}
+              onSelect={() => setSelectedId('end')}
+              onConnectTarget={handleConnectTarget}
+              isTarget={!!connLine && connTarget === 'end' && connTarget !== connectFromRef.current?.fromId}
+            />
+
             {/* Step nodes */}
             {activeFlow.steps.map(step => (
               <StepNode
@@ -564,7 +629,94 @@ export default function FlowBuilder({ onClose }) {
 
         {/* Step editor panel */}
         <div className="flow-editor-panel">
-          {selectedStep ? (
+          {selectedId === 'start' ? (
+            <div className="flow-start-editor">
+              <div className="editor-header" style={{marginBottom: 16}}>
+                <h3 style={{margin: 0}}>⚙️ Flow Start Config</h3>
+              </div>
+              <div className="editor-section">
+                <div className="editor-sec-title">Execution Mode</div>
+                <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
+                  <button 
+                    className={`mode-btn ${activeFlow.start?.mode !== 'performance' ? 'active' : ''}`}
+                    onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, mode: 'functional'}}))}
+                  >
+                    🟢 Functional (1 user)
+                  </button>
+                  <button 
+                    className={`mode-btn ${activeFlow.start?.mode === 'performance' ? 'active' : ''}`}
+                    onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, mode: 'performance'}}))}
+                  >
+                    ⚡ Performance (Load Test)
+                  </button>
+                </div>
+              </div>
+
+              {activeFlow.start?.mode === 'performance' && (
+                <>
+                  <div className="editor-section">
+                    <label className="editor-sec-title">Number of Concurrent Users</label>
+                    <input type="number" min="1" value={activeFlow.start?.numUsers || 1}
+                      onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, numUsers: parseInt(e.target.value) || 1}}))}
+                      className="form-input" style={{marginTop: 6}} />
+                  </div>
+
+                  <div className="editor-section">
+                    <label className="editor-sec-title">Ramp-up Time (seconds)</label>
+                    <input type="number" min="0" value={activeFlow.start?.rampUpSeconds || 0}
+                      onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, rampUpSeconds: parseInt(e.target.value) || 0}}))}
+                      className="form-input" style={{marginTop: 6}} />
+                    <div className="sec-hint">Time to spawn all users gradually (0 = instant)</div>
+                  </div>
+
+                  <div className="editor-section">
+                    <div className="editor-sec-title">Execution Duration</div>
+                    <div style={{display: 'flex', gap: 8, marginTop: 8, marginBottom: 12}}>
+                      <button 
+                        className={`mode-btn ${activeFlow.start?.durationMode !== 'transactions' ? 'active' : ''}`}
+                        onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, durationMode: 'duration'}}))}
+                      >
+                        By Time
+                      </button>
+                      <button 
+                        className={`mode-btn ${activeFlow.start?.durationMode === 'transactions' ? 'active' : ''}`}
+                        onClick={() => setActiveFlow(f => ({ ...f, start: {...f.start, durationMode: 'transactions'}}))}
+                      >
+                        By Transactions
+                      </button>
+                    </div>
+
+                    {activeFlow.start?.durationMode !== 'transactions' ? (
+                      <>
+                        <label className="editor-sec-title">Duration (seconds)</label>
+                        <input type="number" min="1" value={activeFlow.start?.durationSeconds || 60}
+                          onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, durationSeconds: parseInt(e.target.value) || 60}}))}
+                          className="form-input" style={{marginTop: 6}} />
+                      </>
+                    ) : (
+                      <>
+                        <label className="editor-sec-title">Transactions per User</label>
+                        <input type="number" min="1" value={activeFlow.start?.transactionsCount || 1}
+                          onChange={e => setActiveFlow(f => ({ ...f, start: {...f.start, transactionsCount: parseInt(e.target.value) || 1}}))}
+                          className="form-input" style={{marginTop: 6}} />
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : selectedId === 'end' ? (
+            <div className="flow-end-editor">
+              <div className="editor-header" style={{marginBottom: 16}}>
+                <h3 style={{margin: 0}}>⏹ Flow End</h3>
+              </div>
+              <div className="step-editor-empty" style={{height: 'auto', justifyContent: 'flex-start', paddingTop: 20}}>
+                <div style={{fontSize: 18, marginBottom: 10}}>✓</div>
+                <div>Flow execution complete</div>
+                <div style={{fontSize: 11, marginTop: 10, opacity: 0.5}}>Connect final step(s) to the END node</div>
+              </div>
+            </div>
+          ) : selectedStep ? (
             <FlowStepEditor step={selectedStep} onUpdate={updateStep} stepStatuses={stepStatuses} />
           ) : (
             <div className="step-editor-empty">
