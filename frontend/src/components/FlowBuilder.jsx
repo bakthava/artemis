@@ -310,8 +310,7 @@ export default function FlowBuilder({ onClose }) {
   const [runVars,      setRunVars]      = useState({});
   const [isRunning,    setIsRunning]    = useState(false);
   const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
-  const [isFlowMinimized, setIsFlowMinimized] = useState(false);
-  const [minimizedTargetId, setMinimizedTargetId] = useState(null);
+  const [flowViewState, setFlowViewState] = useState({}); // { [flowId]: { minimized: bool, targetId: string|null } }
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -426,17 +425,48 @@ export default function FlowBuilder({ onClose }) {
     showToast('Test statistics reset', 'info');
   }
 
+  const flowViewKey = activeFlow.id || '__draft__';
+  const currentView = flowViewState[flowViewKey] || { minimized: false, targetId: null };
+  const isFlowMinimized = !!currentView.minimized;
+  const minimizedTargetId = currentView.targetId || null;
+
+  function setCurrentFlowView(partial) {
+    setFlowViewState(prev => ({
+      ...prev,
+      [flowViewKey]: { ...(prev[flowViewKey] || { minimized: false, targetId: null }), ...partial },
+    }));
+  }
+
   function toggleFlowMinimize() {
-    setIsFlowMinimized(prev => {
-      const next = !prev;
-      if (!next) setMinimizedTargetId(null);
-      return next;
-    });
+    if (isFlowMinimized) {
+      setCurrentFlowView({ minimized: false, targetId: null });
+      return;
+    }
+    setCurrentFlowView({ minimized: true });
   }
 
   function minimizeToNode(stepId) {
-    setMinimizedTargetId(stepId);
-    setIsFlowMinimized(true);
+    // Double-click same target toggles back to expanded view
+    if (isFlowMinimized && minimizedTargetId === stepId) {
+      setCurrentFlowView({ minimized: false, targetId: null });
+      return;
+    }
+    setCurrentFlowView({ minimized: true, targetId: stepId });
+  }
+
+  function setGlobalFlowMinimize(minimized) {
+    const keys = new Set((flows || []).map(f => f.id));
+    keys.add(flowViewKey);
+    setFlowViewState(prev => {
+      const next = { ...prev };
+      keys.forEach(k => {
+        const cur = prev[k] || { minimized: false, targetId: null };
+        next[k] = minimized
+          ? { ...cur, minimized: true }
+          : { minimized: false, targetId: null };
+      });
+      return next;
+    });
   }
 
   // ── Run / stop ────────────────────────────────────────────────────────────
@@ -714,6 +744,8 @@ export default function FlowBuilder({ onClose }) {
           <button className="flow-btn" onClick={toggleFlowMinimize}>
             {isFlowMinimized ? '⤢ Expand Flow' : '⤡ Minimize Flow'}
           </button>
+          <button className="flow-btn" onClick={() => setGlobalFlowMinimize(true)}>▣ Global Minimize</button>
+          <button className="flow-btn" onClick={() => setGlobalFlowMinimize(false)}>▢ Global Maximize</button>
           {/* + Step dropdown */}
           <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
             <button className="flow-btn" onClick={() => setShowAddMenu(m => !m)}>+ Step ▾</button>
