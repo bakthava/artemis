@@ -159,8 +159,14 @@ export async function runFlow(flow, onUpdate, onMetrics, signal) {
           // Collect metrics for performance testing
           if (onMetrics) {
             const reqBody = substituteRequest(step.request, variables);
-            const bytesRecv = response.body ? new Blob([response.body]).size : 0;
-            const bytesSent = reqBody.body ? new Blob([reqBody.body]).size : 0;
+            const bytesRecv = Number.isFinite(response.bytesReceived)
+              ? Number(response.bytesReceived)
+              : (Number.isFinite(response.size)
+                ? Number(response.size)
+                : (response.body ? new Blob([response.body]).size : 0));
+            const bytesSent = Number.isFinite(response.bytesSent)
+              ? Number(response.bytesSent)
+              : (reqBody.body ? new Blob([reqBody.body]).size : 0);
             onMetrics(step.name || `${reqBody.method} ${reqBody.url}`, {
               responseTime: reqMs,
               statusCode: response.statusCode,
