@@ -793,22 +793,6 @@ export default function FlowBuilder({ onClose }) {
           </div>
         </div>
 
-        {/* ── Metrics table (performance mode) ── */}
-        {activeFlow.steps.find(s => s.type === 'start')?.mode === 'performance' && (isRunning || Object.keys(metrics).length > 0) && (
-          <div style={{
-            backgroundColor: '#0f172a',
-            borderTop: '1px solid #334155',
-            padding: '12px 16px',
-            margin: '0 12px 12px',
-            borderRadius: 6,
-          }}>
-            <div style={{color: '#cbd5e1', fontSize: 12, fontWeight: 600, marginBottom: 8}}>
-              📊 Performance Metrics {isRunning && <span style={{color: '#fbbf24'}}>● Live</span>}
-            </div>
-            <MetricsTable metrics={metrics} flowName={activeFlow.name || 'untitled'} />
-          </div>
-        )}
-
         {/* Step editor panel */}
         <div className="flow-editor-panel">
           {selectedStep?.type === 'start' ? (
@@ -918,6 +902,22 @@ export default function FlowBuilder({ onClose }) {
           )}
         </div>
       </div>
+
+      {/* ── Metrics table (performance mode) ── */}
+      {activeFlow.steps.find(s => s.type === 'start')?.mode === 'performance' && (isRunning || Object.keys(metrics).length > 0) && (
+        <div style={{
+          backgroundColor: '#0f172a',
+          borderTop: '1px solid #334155',
+          padding: '12px 16px',
+          margin: '12px 12px 12px',
+          borderRadius: 6,
+        }}>
+          <div style={{color: '#cbd5e1', fontSize: 12, fontWeight: 600, marginBottom: 8}}>
+            📊 Performance Metrics {isRunning && <span style={{color: '#fbbf24'}}>● Live</span>}
+          </div>
+          <MetricsTable metrics={metrics} flowName={activeFlow.name || 'untitled'} />
+        </div>
+      )}
     </div>
   );
 }
