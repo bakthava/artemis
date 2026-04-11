@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import './App.css';
 import { RequestProvider } from './context/RequestContext';
 import { ToastProvider } from './context/ToastContext';
+import { AppProvider, useAppContext } from './context/AppContext';
 import Header from './components/Header';
 import EnvSelector from './components/EnvSelector';
 import Sidebar from './components/Sidebar';
@@ -19,18 +20,13 @@ function AppContent() {
   const [loading, setLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   const urlInputRef = useRef(null);
   const { request } = useRequest();
+  const { refreshHistory, refreshCollections } = useAppContext();
   const { draft } = useLoadDraftRequest();
 
   // Auto-save draft request
   useAutoSave(request, 1000);
-
-  // Trigger callback to refresh sidebar data
-  const triggerRefresh = () => {
-    setRefreshKey(prev => prev + 1);
-  };
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -47,14 +43,14 @@ function AppContent() {
       <Header onSave={() => setShowSaveModal(true)} onSettings={() => setShowSettingsModal(true)} />
       <EnvSelector />
       <div className="app-container">
-        <Sidebar setResponse={setResponse} key={refreshKey} />
+        <Sidebar setResponse={setResponse} />
         <div className="main-content">
           <RequestBuilder 
             onResponse={setResponse}
             loading={loading}
             setLoading={setLoading}
             urlInputRef={urlInputRef}
-            onRequestComplete={triggerRefresh}
+            onRequestComplete={refreshHistory}
           />
           <ResponseViewer response={response} loading={loading} />
         </div>
@@ -62,7 +58,7 @@ function AppContent() {
       <SaveRequestModal 
         isOpen={showSaveModal} 
         onClose={() => setShowSaveModal(false)}
-        onSaveComplete={triggerRefresh}
+        onSaveComplete={refreshCollections}
       />
       <SettingsModal 
         isOpen={showSettingsModal}
@@ -77,7 +73,9 @@ function App() {
   return (
     <ToastProvider>
       <RequestProvider>
-        <AppContent />
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
       </RequestProvider>
     </ToastProvider>
   );

@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import { useAppContext } from '../context/AppContext';
 
 export const useCollections = () => {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const ctx = useAppContext();
+  const collectionsVersion = ctx?.collectionsVersion ?? 0;
 
   const fetchCollections = useCallback(async () => {
     setLoading(true);
@@ -62,7 +65,7 @@ export const useCollections = () => {
 
   useEffect(() => {
     fetchCollections();
-  }, [fetchCollections]);
+  }, [fetchCollections, collectionsVersion]);
 
   return {
     collections,
@@ -173,6 +176,8 @@ export const useHistory = (limit = 50) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const ctx = useAppContext();
+  const historyVersion = ctx?.historyVersion ?? 0;
 
   const fetchHistory = useCallback(async (offset = 0) => {
     setLoading(true);
@@ -199,7 +204,7 @@ export const useHistory = (limit = 50) => {
 
   useEffect(() => {
     fetchHistory();
-  }, [fetchHistory]);
+  }, [fetchHistory, historyVersion]);
 
   return {
     history,
