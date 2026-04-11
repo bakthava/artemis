@@ -215,7 +215,7 @@ export const useAutoSave = (request, delayMs = 1000) => {
     if (!request || !request.url) return;
 
     const timer = setTimeout(() => {
-      localStorage.setItem('httpx-draft-request', JSON.stringify(request));
+      localStorage.setItem('artemis-draft-request', JSON.stringify(request));
     }, delayMs);
 
     return () => clearTimeout(timer);
@@ -227,7 +227,7 @@ export const useLoadDraftRequest = () => {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('httpx-draft-request') || sessionStorage.getItem('httpx-draft-request');
+      const saved = localStorage.getItem('artemis-draft-request') || sessionStorage.getItem('artemis-draft-request');
       if (saved) {
         setDraft(JSON.parse(saved));
       }
@@ -237,8 +237,8 @@ export const useLoadDraftRequest = () => {
   }, []);
 
   const clearDraft = useCallback(() => {
-    localStorage.removeItem('httpx-draft-request');
-    sessionStorage.removeItem('httpx-draft-request');
+    localStorage.removeItem('artemis-draft-request');
+    sessionStorage.removeItem('artemis-draft-request');
     setDraft(null);
   }, []);
 

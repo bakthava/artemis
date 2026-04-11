@@ -78,7 +78,7 @@ export const RequestProvider = ({ children }) => {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('httpx-draft-request') || sessionStorage.getItem('httpx-draft-request');
+      const saved = localStorage.getItem('artemis-draft-request') || sessionStorage.getItem('artemis-draft-request');
       if (!saved) {
         return;
       }

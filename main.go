@@ -1,10 +1,10 @@
 package main
 
 import (
+	"artemis/internal/models"
 	"context"
 	"encoding/json"
 	"fmt"
-	"artemis/internal/models"
 	"log"
 	"net/http"
 	"os"
