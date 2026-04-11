@@ -181,9 +181,9 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
             title="Pull to connect to next step →"
             style={{
               position: 'absolute',
-              width: 12,
-              height: 12,
-              right: -6,
+              width: 14,
+              height: 14,
+              right: -10,
               top: '50%',
               transform: 'translateY(-50%)',
               backgroundColor: '#3b82f6',
@@ -203,9 +203,9 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
           <div 
             style={{
               position: 'absolute',
-              width: 12,
-              height: 12,
-              left: -6,
+              width: 14,
+              height: 14,
+              left: -10,
               top: '50%',
               transform: 'translateY(-50%)',
               backgroundColor: '#dc2626',
@@ -392,8 +392,17 @@ export default function FlowBuilder({ onClose }) {
     setActiveFlow(f => ({ ...f, steps: f.steps.map(s => s.id === id ? { ...s, x, y } : s) }));
   }
 
-  function updateStep(id, updates) {
-    setActiveFlow(f => ({ ...f, steps: applyUpdate(f.steps, id, updates) }));
+  function updateStep(idOrStep, updates) {
+    // Accept either updateStep(stepId, updates) or updateStep(fullStep)
+    if (idOrStep && typeof idOrStep === 'object' && idOrStep.id) {
+      const nextStep = idOrStep;
+      setActiveFlow(f => ({
+        ...f,
+        steps: f.steps.map(s => (s.id === nextStep.id ? nextStep : s)),
+      }));
+      return;
+    }
+    setActiveFlow(f => ({ ...f, steps: applyUpdate(f.steps, idOrStep, updates) }));
   }
 
   function addEdge(fromId, toId, label) {
