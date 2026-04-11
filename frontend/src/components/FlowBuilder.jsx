@@ -20,6 +20,14 @@ const STEP_TYPES = [
 ];
 const TYPE_META = Object.fromEntries(STEP_TYPES.map(t => [t.type, t]));
 
+function nodeW(step) {
+  return (step?.type === 'start' || step?.type === 'end') ? 140 : NODE_W;
+}
+
+function nodeH(step) {
+  return (step?.type === 'start' || step?.type === 'end') ? 80 : NODE_H;
+}
+
 function nextPos(steps) {
   if (!steps.length) return { x: 80, y: 80 };
   const bot = [...steps].sort((a, b) => (b.y || 0) - (a.y || 0))[0];
@@ -664,15 +672,19 @@ export default function FlowBuilder({ onClose }) {
                 const to   = activeFlow.steps.find(s => s.id === edge.to);
                 if (!from || !to) return null;
 
-                let y1 = (from.y || 0) + NODE_H / 2;
+                const fromW = nodeW(from);
+                const fromH = nodeH(from);
+                const toH = nodeH(to);
+
+                let y1 = (from.y || 0) + fromH / 2;
                 if (from.type === 'condition') {
                   y1 = edge.label === 'else'
-                    ? (from.y || 0) + NODE_H * 0.72
-                    : (from.y || 0) + NODE_H * 0.28;
+                    ? (from.y || 0) + fromH * 0.72
+                    : (from.y || 0) + fromH * 0.28;
                 }
-                const x1 = (from.x || 0) + NODE_W + 8;
+                const x1 = (from.x || 0) + fromW + 8;
                 const x2 = to.x || 0;
-                const y2 = (to.y || 0) + NODE_H / 2;
+                const y2 = (to.y || 0) + toH / 2;
                 const d  = bezier(x1, y1, x2, y2);
                 const mx = (x1 + x2) / 2;
                 const my = (y1 + y2) / 2;
