@@ -190,6 +190,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
               border: '2px solid white',
               borderRadius: '50%',
               cursor: 'crosshair',
+              opacity: 1,
               pointerEvents: 'auto',
               zIndex: 100,
             }}
@@ -488,20 +489,37 @@ export default function FlowBuilder({ onClose }) {
   function handleConnectStart(fromId, fromLabel, e) {
     const step = activeFlow.steps.find(s => s.id === fromId);
     if (!step) return;
+    const nodeW = (step.type === 'start' || step.type === 'end') ? 140 : NODE_W;
+    const nodeH = (step.type === 'start' || step.type === 'end') ? 80 : NODE_H;
     const pos = getCanvasXY(e);
-    let fy = (step.y || 0) + NODE_H / 2;
-    if (fromLabel === 'then') fy = (step.y || 0) + NODE_H * 0.28;
-    if (fromLabel === 'else') fy = (step.y || 0) + NODE_H * 0.72;
+    let fy = (step.y || 0) + nodeH / 2;
+    if (fromLabel === 'then') fy = (step.y || 0) + nodeH * 0.28;
+    if (fromLabel === 'else') fy = (step.y || 0) + nodeH * 0.72;
     connectFromRef.current = { fromId, fromLabel };
-    setConnLine({ x1: (step.x || 0) + NODE_W + 8, y1: fy, x2: pos.x, y2: pos.y });
+    setConnLine({ x1: (step.x || 0) + nodeW + 8, y1: fy, x2: pos.x, y2: pos.y });
 
     function onMove(ev) {
       const p = getCanvasXY(ev);
       setConnLine(l => l ? { ...l, x2: p.x, y2: p.y } : null);
     }
-    function onUp() {
+    function onUp(ev) {
       const cf = connectFromRef.current;
-      const ct = connectTargRef.current;
+      let ct = connectTargRef.current;
+
+      // Fallback hit test on mouse-up so connect works even if hover events are missed while dragging.
+      if (!ct && cf) {
+        const p = getCanvasXY(ev);
+        const targetStep = (activeFlow.steps || []).find(s => {
+          if (s.id === cf.fromId) return false;
+          const w = (s.type === 'start' || s.type === 'end') ? 140 : NODE_W;
+          const h = (s.type === 'start' || s.type === 'end') ? 80 : NODE_H;
+          const sx = s.x || 0;
+          const sy = s.y || 0;
+          return p.x >= sx && p.x <= sx + w && p.y >= sy && p.y <= sy + h;
+        });
+        ct = targetStep?.id || null;
+      }
+
       if (cf && ct && ct !== cf.fromId) addEdge(cf.fromId, ct, cf.fromLabel || '');
       connectFromRef.current = null;
       connectTargRef.current = null;
