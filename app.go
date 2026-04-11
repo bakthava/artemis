@@ -9,9 +9,19 @@ import (
 	"time"
 )
 
+// Config struct for application settings
+type Config struct {
+	Port           int    `json:"port"`
+	Host           string `json:"host"`
+	Timeout        int    `json:"timeout"`
+	MaxHistorySize int    `json:"maxHistorySize"`
+	DBPath         string `json:"dbPath"`
+}
+
 // App struct
 type App struct {
 	ctx                   context.Context
+	config                *Config
 	database              *db.DB
 	collectionRepository  *db.CollectionRepository
 	environmentRepository *db.EnvironmentRepository
@@ -20,8 +30,10 @@ type App struct {
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{}
+func NewApp(config *Config) *App {
+	return &App{
+		config: config,
+	}
 }
 
 // startup is called when the app starts. The context is saved
@@ -128,6 +140,11 @@ func (a *App) GetHistory(limit, offset int) ([]*models.HistoryEntry, error) {
 
 func (a *App) ClearHistory() error {
 	return a.historyRepository.Clear()
+}
+
+// Config method
+func (a *App) GetConfig() *Config {
+	return a.config
 }
 
 // shutdown is called when the app closes

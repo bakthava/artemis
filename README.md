@@ -53,6 +53,41 @@ A lightweight, fast HTTP client for Windows. Simple, portable, and powerful.
 - **Clear History**: Remove saved request history
 - **Reset Data**: Clear all collections and environments (cannot undo)
 
+## 🔧 Configuration
+
+### config.json
+
+Edit `config.json` in the app directory to customize settings:
+
+```json
+{
+  "port": 8080,
+  "host": "localhost",
+  "timeout": 30,
+  "maxHistorySize": 100,
+  "dbPath": "artemis.db"
+}
+```
+
+### Available Configuration Options
+
+- **port**: HTTP server port (default: 8080)
+- **host**: Server hostname (default: localhost)
+- **timeout**: Request timeout in seconds (default: 30)
+- **maxHistorySize**: Maximum number of requests in history (default: 100)
+- **dbPath**: Path to database file (default: artemis.db)
+
+### Changing the Port
+
+To run Artemis on a different port:
+
+1. Open `config.json`
+2. Change `"port"` value (e.g., `3000`)
+3. Save the file
+4. Restart `artemis.exe`
+
+The frontend will automatically connect to the new port.
+
 ## 🌍 Environments & Variables
 
 ### Create Environment

@@ -1,0 +1,7 @@
+{
+  "port": 8080,
+  "host": "localhost",
+  "timeout": 30,
+  "maxHistorySize": 100,
+  "dbPath": "artemis.db"
+}

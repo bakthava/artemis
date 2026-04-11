@@ -1,5 +1,7 @@
 // HTTP API wrapper for Artemis web server
-const API_BASE = 'http://localhost:8080/api';
+// Use window.location.origin to dynamically get the API base URL
+// This allows the port to be configurable via config.json
+const API_BASE = `${window.location.origin}/api`;
 
 const api = {
   request: {

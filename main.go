@@ -290,9 +290,45 @@ func (s *HTTPServer) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
+// LoadConfig reads configuration from config.json
+func LoadConfig(filePath string) (*Config, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Warning: Could not read config.json, using defaults: %v", err)
+		// Return default config
+		return &Config{
+			Port:           8080,
+			Host:           "localhost",
+			Timeout:        30,
+			MaxHistorySize: 100,
+			DBPath:         "artemis.db",
+		}, nil
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		log.Printf("Warning: Could not parse config.json, using defaults: %v", err)
+		return &Config{
+			Port:           8080,
+			Host:           "localhost",
+			Timeout:        30,
+			MaxHistorySize: 100,
+			DBPath:         "artemis.db",
+		}, nil
+	}
+
+	return &config, nil
+}
+
 func main() {
-	// Initialize app
-	app := NewApp()
+	// Load configuration
+	config, err := LoadConfig("config.json")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Initialize app with config
+	app := NewApp(config)
 	ctx := context.Background()
 	app.startup(ctx)
 	defer app.shutdown(ctx)
@@ -301,8 +337,10 @@ func main() {
 	server := NewHTTPServer(app)
 
 	// Start server in goroutine
+	addr := fmt.Sprintf(":%d", config.Port)
 	go func() {
-		if err := server.ListenAndServe(":8080"); err != nil && err != http.ErrServerClosed {
+		log.Printf("Server starting on %s:%d", config.Host, config.Port)
+		if err := server.ListenAndServe(addr); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
