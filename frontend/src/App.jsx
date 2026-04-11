@@ -19,6 +19,7 @@ function AppContent() {
   const [loading, setLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const urlInputRef = useRef(null);
   const { request } = useRequest();
   const { draft } = useLoadDraftRequest();
@@ -26,39 +27,42 @@ function AppContent() {
   // Auto-save draft request
   useAutoSave(request, 1000);
 
+  // Trigger callback to refresh sidebar data
+  const triggerRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     focusUrl: () => urlInputRef.current?.focus(),
     sendRequest: () => {
-      // Find and click the send button (handled via ref in RequestBuilder)
       const sendBtn = document.querySelector('.send-button');
       sendBtn?.click();
     },
     saveRequest: () => setShowSaveModal(true),
   });
 
-  // Load draft on startup
-  // Note: This is handled by RequestContext via useEffect in the provider
-
   return (
     <>
       <Header onSave={() => setShowSaveModal(true)} onSettings={() => setShowSettingsModal(true)} />
       <EnvSelector />
       <div className="app-container">
-        <Sidebar setResponse={setResponse} />
+        <Sidebar setResponse={setResponse} key={refreshKey} />
         <div className="main-content">
           <RequestBuilder 
             onResponse={setResponse}
             loading={loading}
             setLoading={setLoading}
             urlInputRef={urlInputRef}
+            onRequestComplete={triggerRefresh}
           />
           <ResponseViewer response={response} loading={loading} />
         </div>
       </div>
       <SaveRequestModal 
         isOpen={showSaveModal} 
-        onClose={() => setShowSaveModal(false)} 
+        onClose={() => setShowSaveModal(false)}
+        onSaveComplete={triggerRefresh}
       />
       <SettingsModal 
         isOpen={showSettingsModal}

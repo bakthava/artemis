@@ -4,7 +4,7 @@ import { useCollections } from '../hooks';
 import { useToast } from '../context/ToastContext';
 import api from '../services/api';
 
-export default function SaveRequestModal({ isOpen, onClose }) {
+export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
   const { request } = useRequest();
   const { collections, createCollection } = useCollections();
   const { showToast } = useToast();
@@ -34,6 +34,8 @@ export default function SaveRequestModal({ isOpen, onClose }) {
       setRequestName('');
       setSelectedCollection('');
       onClose();
+      // Refresh collections to show new request
+      onSaveComplete?.();
     } catch (err) {
       showToast(`Error saving request: ${err.message}`, 'error');
     }

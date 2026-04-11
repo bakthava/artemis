@@ -3,7 +3,7 @@ import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
 import api from '../services/api';
 
-function RequestBuilder({ onResponse, loading, setLoading, urlInputRef }) {
+function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onRequestComplete }) {
   const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest } = useRequest();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('params');
@@ -45,6 +45,8 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef }) {
       
       showToast('Request completed successfully', 'success');
       onResponse(response);
+      // Refresh sidebar to show updated history
+      onRequestComplete?.();
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
       if (err.response) {
@@ -73,6 +75,8 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef }) {
           logs: [`[ERROR] ${err.message}`],
         });
       }
+      // Still refresh even on error to update history
+      onRequestComplete?.();
     } finally {
       setLoading(false);
     }
