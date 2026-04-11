@@ -61,6 +61,27 @@ function mkFlow() {
   };
 }
 
+function sanitizeForApi(value) {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map(v => sanitizeForApi(v))
+      .filter(v => v !== undefined);
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    Object.entries(value).forEach(([k, v]) => {
+      const sv = sanitizeForApi(v);
+      if (sv !== undefined) out[k] = sv;
+    });
+    return out;
+  }
+  return value;
+}
+
 function stepDesc(step) {
   switch (step.type) {
     case 'request':      return step.request ? `${step.request.method} ${step.request.url || '—'}` : '';
@@ -353,9 +374,10 @@ export default function FlowBuilder({ onClose }) {
       return;
     }
     try {
+      const payload = sanitizeForApi(activeFlow);
       const saved = activeFlow.id
-        ? await api.flows.update(activeFlow)
-        : await api.flows.create(activeFlow);
+        ? await api.flows.update(payload)
+        : await api.flows.create(payload);
       setActiveFlow(JSON.parse(JSON.stringify(saved)));
       await loadFlows();
       showToast('Flow saved ✓', 'success');
