@@ -1,5 +1,4 @@
 # Build outputs
-artemis.exe
 httpx-server.exe
 httpx.exe
 build/bin/
