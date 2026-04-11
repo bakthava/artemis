@@ -341,6 +341,10 @@ export default function FlowBuilder({ onClose }) {
 
   async function saveFlow() {
     if (!activeFlow.name.trim()) { showToast('Enter a flow name', 'warning'); return; }
+    if (!activeFlow.id && (flows?.length || 0) >= 200) {
+      showToast('Flow limit reached: max 200 flows per project', 'warning');
+      return;
+    }
     try {
       const saved = activeFlow.id
         ? await api.flows.update(activeFlow)

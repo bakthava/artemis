@@ -3,6 +3,7 @@ package db
 import (
 	"artemis/internal/models"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,8 @@ type FlowRepository struct {
 	db *DB
 }
 
+const MaxFlowsPerProject = 200
+
 // NewFlowRepository creates a new flow repository
 func NewFlowRepository(db *DB) *FlowRepository {
 	return &FlowRepository{db: db}
@@ -22,6 +25,14 @@ func NewFlowRepository(db *DB) *FlowRepository {
 
 // Create saves a new flow and returns it with assigned ID/timestamps
 func (r *FlowRepository) Create(flow *models.Flow) (*models.Flow, error) {
+	count, err := r.countFlows()
+	if err != nil {
+		return nil, err
+	}
+	if count >= MaxFlowsPerProject {
+		return nil, errors.New("flow limit reached (max 200 per project)")
+	}
+
 	if flow.ID == "" {
 		flow.ID = uuid.New().String()
 	}
@@ -39,6 +50,19 @@ func (r *FlowRepository) Create(flow *models.Flow) (*models.Flow, error) {
 		return nil, err
 	}
 	return flow, nil
+}
+
+func (r *FlowRepository) countFlows() (int, error) {
+	count := 0
+	iter := r.db.conn.NewIterator(util.BytesPrefix([]byte("flow:")), nil)
+	defer iter.Release()
+	for iter.Next() {
+		count++
+	}
+	if err := iter.Error(); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // GetAll retrieves all stored flows
