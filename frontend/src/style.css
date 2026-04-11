@@ -1798,6 +1798,70 @@ html.dark .toast-error {
   to   { box-shadow: 0 0 0 7px rgba(59,130,246,0.0); }
 }
 
+/* Terminal nodes (START/END) */
+.flow-node-terminal {
+  width: 140px;
+  min-height: 80px;
+  border-radius: 12px;
+  border-width: 2px;
+  overflow: visible;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
+}
+.flow-node-terminal .terminal-node-body {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.flow-node-terminal .terminal-node-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.flow-node-terminal .terminal-node-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.flow-node-terminal .terminal-node-pill {
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.45);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: rgba(255,255,255,0.9);
+}
+
+.flow-node-start {
+  color: #ecfdf5;
+  border-color: #34d399;
+  background: linear-gradient(150deg, #0f766e 0%, #047857 58%, #065f46 100%);
+}
+.flow-node-end {
+  color: #fff1f2;
+  border-color: #fb7185;
+  background: linear-gradient(150deg, #be123c 0%, #9f1239 58%, #881337 100%);
+}
+
+.flow-node-start .conn-handle.hnd-main {
+  border-color: #e2e8f0;
+  background: radial-gradient(circle at 32% 30%, #93c5fd 0%, #3b82f6 48%, #1d4ed8 100%);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.28), 0 0 18px rgba(59, 130, 246, 0.55);
+}
+.flow-node-start .conn-handle.hnd-main:hover {
+  transform: translateY(-50%) scale(1.25);
+  filter: brightness(1.1);
+}
+
+.terminal-end-dot {
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: radial-gradient(circle at 30% 28%, #fda4af 0%, #f43f5e 50%, #be123c 100%);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.25);
+}
+
 /* START and END special nodes */
 .flow-start-node, .flow-end-node {
   position: absolute;

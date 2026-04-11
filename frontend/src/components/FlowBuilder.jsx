@@ -159,27 +159,26 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
 
   // Special styling for start/end nodes
   if (step.type === 'start' || step.type === 'end') {
+    const kindClass = step.type === 'start' ? 'flow-node-start' : 'flow-node-end';
     return (
       <div
-        className={['flow-node', selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
+        className={['flow-node', 'flow-node-terminal', kindClass, selected ? 'fn-selected' : '', isTarget ? 'fn-target' : ''].filter(Boolean).join(' ')}
         style={{
           left: step.x || 0,
           top: step.y || 0,
           width: 140,
           height: 80,
-          backgroundColor: meta.color,
-          borderRadius: 8,
-          cursor: 'move',
-          position: 'absolute',
+          position: 'absolute'
         }}
         onMouseDown={onMouseDown}
         onMouseEnter={() => onConnectTarget(step.id)}
         onMouseLeave={() => onConnectTarget(null)}
         onClick={e => { e.stopPropagation(); onSelect(); }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'white', fontWeight: 600 }}>
-          <div style={{ fontSize: 24, marginBottom: 4 }}>{meta.icon}</div>
-          <div style={{ fontSize: 11 }}>{step.name}</div>
+        <div className="terminal-node-body">
+          <div className="terminal-node-icon">{meta.icon}</div>
+          <div className="terminal-node-name">{step.name}</div>
+          <div className="terminal-node-pill">{step.type === 'start' ? 'ENTRY' : 'EXIT'}</div>
         </div>
 
         {/* Connection handle for START - clickable circle on right edge */}
@@ -194,9 +193,6 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
               right: -10,
               top: '50%',
               transform: 'translateY(-50%)',
-              backgroundColor: '#3b82f6',
-              border: '2px solid white',
-              borderRadius: '50%',
               cursor: 'crosshair',
               opacity: 1,
               pointerEvents: 'auto',
@@ -209,6 +205,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
         {/* Connection indicator for END - shows it accepts input */}
         {step.type === 'end' && (
           <div 
+            className="terminal-end-dot"
             style={{
               position: 'absolute',
               width: 14,
@@ -216,9 +213,6 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
               left: -10,
               top: '50%',
               transform: 'translateY(-50%)',
-              backgroundColor: '#dc2626',
-              border: '2px solid white',
-              borderRadius: '50%',
               pointerEvents: 'none',
               zIndex: 1,
             }} 
@@ -235,16 +229,6 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
               position: 'absolute', 
               top: -6, 
               right: -6,
-              width: 20,
-              height: 20,
-              padding: 0,
-              backgroundColor: '#dc2626',
-              color: 'white',
-              border: 'none',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 'bold',
               zIndex: 99,
             }}
           >✕</button>
