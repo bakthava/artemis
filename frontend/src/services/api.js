@@ -191,6 +191,57 @@ const api = {
       }
     },
   },
+
+  flows: {
+    getAll: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/flows`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch flows: ${err.message}`);
+      }
+    },
+
+    create: async (flow) => {
+      try {
+        const response = await fetch(`${API_BASE}/flows`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to create flow: ${err.message}`);
+      }
+    },
+
+    update: async (flow) => {
+      try {
+        const response = await fetch(`${API_BASE}/flows/${flow.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to update flow: ${err.message}`);
+      }
+    },
+
+    delete: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/flows/${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to delete flow: ${err.message}`);
+      }
+    },
+  },
 };
 
 export default api;

@@ -55,6 +55,13 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("GET /api/history", s.handleGetHistory)
 	s.router.HandleFunc("DELETE /api/history", s.handleClearHistory)
 
+	// Flow endpoints
+	s.router.HandleFunc("POST /api/flows", s.handleCreateFlow)
+	s.router.HandleFunc("GET /api/flows", s.handleGetFlows)
+	s.router.HandleFunc("GET /api/flows/{id}", s.handleGetFlow)
+	s.router.HandleFunc("PUT /api/flows/{id}", s.handleUpdateFlow)
+	s.router.HandleFunc("DELETE /api/flows/{id}", s.handleDeleteFlow)
+
 	// Request execution endpoint
 	s.router.HandleFunc("POST /api/request/execute", s.handleExecuteRequest)
 
@@ -273,6 +280,73 @@ func (s *HTTPServer) handleExecuteRequest(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (s *HTTPServer) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var flow models.Flow
+	if err := json.NewDecoder(r.Body).Decode(&flow); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	saved, err := s.app.CreateFlow(&flow)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(saved)
+}
+
+func (s *HTTPServer) handleGetFlows(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	flows, err := s.app.GetFlows()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(flows)
+}
+
+func (s *HTTPServer) handleGetFlow(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	flow, err := s.app.GetFlow(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(flow)
+}
+
+func (s *HTTPServer) handleUpdateFlow(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	var flow models.Flow
+	if err := json.NewDecoder(r.Body).Decode(&flow); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	flow.ID = id
+	saved, err := s.app.UpdateFlow(&flow)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(saved)
+}
+
+func (s *HTTPServer) handleDeleteFlow(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	if err := s.app.DeleteFlow(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

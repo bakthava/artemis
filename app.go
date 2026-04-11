@@ -26,6 +26,7 @@ type App struct {
 	collectionRepository  *db.CollectionRepository
 	environmentRepository *db.EnvironmentRepository
 	historyRepository     *db.HistoryRepository
+	flowRepository        *db.FlowRepository
 	httpClient            *services.HTTPClient
 }
 
@@ -53,6 +54,7 @@ func (a *App) startup(ctx context.Context) {
 	a.collectionRepository = db.NewCollectionRepository(database)
 	a.environmentRepository = db.NewEnvironmentRepository(database)
 	a.historyRepository = db.NewHistoryRepository(database)
+	a.flowRepository = db.NewFlowRepository(database)
 
 	// Initialize HTTP client
 	a.httpClient = services.NewHTTPClient()
@@ -140,6 +142,27 @@ func (a *App) GetHistory(limit, offset int) ([]*models.HistoryEntry, error) {
 
 func (a *App) ClearHistory() error {
 	return a.historyRepository.Clear()
+}
+
+// Flow methods
+func (a *App) CreateFlow(flow *models.Flow) (*models.Flow, error) {
+	return a.flowRepository.Create(flow)
+}
+
+func (a *App) GetFlows() ([]*models.Flow, error) {
+	return a.flowRepository.GetAll()
+}
+
+func (a *App) GetFlow(id string) (*models.Flow, error) {
+	return a.flowRepository.GetByID(id)
+}
+
+func (a *App) UpdateFlow(flow *models.Flow) (*models.Flow, error) {
+	return a.flowRepository.Update(flow)
+}
+
+func (a *App) DeleteFlow(id string) error {
+	return a.flowRepository.Delete(id)
 }
 
 // Config method
