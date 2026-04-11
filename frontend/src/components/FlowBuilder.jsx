@@ -727,14 +727,33 @@ export default function FlowBuilder({ onClose }) {
     const start = allSteps.find(s => s.type === 'start');
     if (!start) return new Set(allSteps.map(s => s.id));
 
+    const nextMap = new Map();
+    (activeFlow.edges || []).forEach(e => {
+      if (!nextMap.has(e.from)) nextMap.set(e.from, []);
+      nextMap.get(e.from).push(e.to);
+    });
+
+    const reachableFromStart = new Set([start.id]);
+    const reachQ = [start.id];
+    while (reachQ.length > 0) {
+      const cur = reachQ.shift();
+      const nexts = nextMap.get(cur) || [];
+      for (const n of nexts) {
+        if (reachableFromStart.has(n)) continue;
+        reachableFromStart.add(n);
+        reachQ.push(n);
+      }
+    }
+
     // If a target node is selected for compact mode, show path START -> target.
+    let ids = null;
     if (minimizedTargetId && minimizedTargetId !== start.id) {
       const parent = new Map();
       const q = [start.id];
       parent.set(start.id, null);
       while (q.length > 0) {
         const cur = q.shift();
-        const nexts = (activeFlow.edges || []).filter(e => e.from === cur).map(e => e.to);
+        const nexts = nextMap.get(cur) || [];
         for (const n of nexts) {
           if (parent.has(n)) continue;
           parent.set(n, cur);
@@ -743,32 +762,39 @@ export default function FlowBuilder({ onClose }) {
       }
 
       if (parent.has(minimizedTargetId)) {
-        const ids = new Set();
+        ids = new Set();
         let cur = minimizedTargetId;
         while (cur) {
           ids.add(cur);
           cur = parent.get(cur);
         }
-        return ids;
-      }
-
-      // If target is disconnected from START, show START + target.
-      return new Set([start.id, minimizedTargetId]);
-    }
-
-    const nextEdge = (activeFlow.edges || []).find(e => e.from === start.id);
-    let topNodeId = nextEdge?.to;
-
-    if (!topNodeId) {
-      const candidates = allSteps.filter(s => s.id !== start.id && s.type !== 'end');
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
-        topNodeId = candidates[0].id;
+      } else {
+        // If target is disconnected from START, show START + target.
+        ids = new Set([start.id, minimizedTargetId]);
       }
     }
 
-    const ids = new Set([start.id]);
-    if (topNodeId) ids.add(topNodeId);
+    if (!ids) {
+      const nextEdge = (activeFlow.edges || []).find(e => e.from === start.id);
+      let topNodeId = nextEdge?.to;
+
+      if (!topNodeId) {
+        const candidates = allSteps.filter(s => s.id !== start.id && s.type !== 'end');
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
+          topNodeId = candidates[0].id;
+        }
+      }
+
+      ids = new Set([start.id]);
+      if (topNodeId) ids.add(topNodeId);
+    }
+
+    // Keep orphan/disconnected steps visible as separate mini-flows in compact mode.
+    allSteps.forEach(s => {
+      if (!reachableFromStart.has(s.id)) ids.add(s.id);
+    });
+
     return ids;
   }, [activeFlow.steps, activeFlow.edges, isFlowMinimized, minimizedTargetId]);
 
@@ -884,7 +910,7 @@ export default function FlowBuilder({ onClose }) {
               borderRadius: 6,
               padding: '4px 8px'
             }}>
-              Compact view: START → {minimizedTargetId ? 'selected node' : 'top node'} (double-click any node)
+              Compact view: START → {minimizedTargetId ? 'selected node' : 'top node'} + orphan flows (double-click any node)
             </div>
           )}
           {activeFlow.steps.length === 0 && (
