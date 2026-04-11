@@ -189,7 +189,12 @@ export const useHistory = (limit = 50) => {
     setError(null);
     try {
       const data = await api.history.getRecent(limit, offset);
-      setHistory(data || []);
+      const sorted = (data || []).slice().sort((a, b) => {
+        const aTs = a?.timestamp ?? a?.response?.timestamp ?? 0;
+        const bTs = b?.timestamp ?? b?.response?.timestamp ?? 0;
+        return bTs - aTs;
+      });
+      setHistory(sorted);
     } catch (err) {
       setError(err.message);
     } finally {
