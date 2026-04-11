@@ -413,6 +413,8 @@ export default function FlowBuilder({ onClose }) {
 
   function resetStats() {
     setMetrics({});
+    setStepStatuses(collectIds(activeFlow.steps));
+    setRunVars({ ...activeFlow.variables });
     showToast('Test statistics reset', 'info');
   }
 
