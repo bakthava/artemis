@@ -314,6 +314,7 @@ export default function FlowBuilder({ onClose }) {
   const [metrics,      setMetrics]      = useState({});  // { stepName: { count, minMs, maxMs, sumMs, errors, bytes, ... } }
   const [flowViewState, setFlowViewState] = useState({}); // { [flowId]: { minimized: bool, targetId: string|null } }
   const [nodeMenu, setNodeMenu] = useState(null); // { x, y, stepId }
+  const [canvasMenu, setCanvasMenu] = useState(null); // { x, y, cx, cy }
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
@@ -381,6 +382,13 @@ export default function FlowBuilder({ onClose }) {
     setShowAddMenu(false);
   }
 
+  function addStepAt(type, x, y) {
+    const step = mkStep(type, Math.max(0, x), Math.max(0, y));
+    setActiveFlow(f => ({ ...f, steps: [...f.steps, step] }));
+    setSelectedId(step.id);
+    setShowAddMenu(false);
+  }
+
   function removeStep(id) {
     setActiveFlow(f => ({
       ...f,
@@ -392,11 +400,22 @@ export default function FlowBuilder({ onClose }) {
   }
 
   function openNodeContextMenu(e, step) {
+    setCanvasMenu(null);
     setNodeMenu({ x: e.clientX, y: e.clientY, stepId: step.id });
   }
 
   function closeNodeContextMenu() {
     setNodeMenu(null);
+  }
+
+  function openCanvasContextMenu(e) {
+    const p = getCanvasXY(e);
+    setNodeMenu(null);
+    setCanvasMenu({ x: e.clientX, y: e.clientY, cx: p.x, cy: p.y });
+  }
+
+  function closeCanvasContextMenu() {
+    setCanvasMenu(null);
   }
 
   function moveStep(id, x, y) {
@@ -739,7 +758,7 @@ export default function FlowBuilder({ onClose }) {
   const startConfigStep = selectedStep?.type === 'start' ? selectedStep : startStep;
 
   return (
-    <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); closeNodeContextMenu(); }}>
+    <div className="flow-builder" onClick={() => { setShowAddMenu(false); setSelectedEdge(null); closeNodeContextMenu(); closeCanvasContextMenu(); }}>
 
       {/* ── Toolbar ── */}
       <div className="flow-toolbar">
@@ -828,6 +847,7 @@ export default function FlowBuilder({ onClose }) {
 
         {/* ── Node canvas ── */}
         <div className="flow-canvas-wrap" ref={canvasWrapRef}
+          onContextMenu={e => { e.preventDefault(); e.stopPropagation(); openCanvasContextMenu(e); }}
           onClick={() => setSelectedId(null)}>
           {isFlowMinimized && (
             <div style={{
@@ -941,6 +961,40 @@ export default function FlowBuilder({ onClose }) {
                 isTarget={!!connLine && connTarget === step.id && connTarget !== connectFromRef.current?.fromId}
               />
             ))}
+
+            {canvasMenu && (
+              <div
+                style={{
+                  position: 'fixed',
+                  left: canvasMenu.x,
+                  top: canvasMenu.y,
+                  zIndex: 520,
+                  minWidth: 220,
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: 8,
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
+                  color: '#cbd5e1',
+                  padding: 8,
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Add Step Here</div>
+                {STEP_TYPES.map(t => (
+                  <button
+                    key={`ctx-${t.type}`}
+                    className="flow-btn"
+                    style={{ width: '100%', textAlign: 'left', marginBottom: 6 }}
+                    onClick={() => {
+                      addStepAt(t.type, canvasMenu.cx, canvasMenu.cy);
+                      closeCanvasContextMenu();
+                    }}
+                  >
+                    {t.icon} {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {nodeMenu && contextStep && (
               <div
