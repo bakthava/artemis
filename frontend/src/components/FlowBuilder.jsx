@@ -420,54 +420,115 @@ export default function FlowBuilder({ onClose }) {
     setIsRunning(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+
+    const sleepWithAbort = (ms) => new Promise((resolve, reject) => {
+      if (ms <= 0) return resolve();
+      const t = setTimeout(resolve, ms);
+      const onAbort = () => {
+        clearTimeout(t);
+        reject(new Error('Aborted'));
+      };
+      ctrl.signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+    const onMetrics = (stepName, metric) => {
+      // Aggregate metrics per request name
+      setMetrics(prev => {
+        const existing = prev[stepName] || {
+          count: 0,
+          minMs: Infinity,
+          maxMs: 0,
+          sumMs: 0,
+          sumSqMs: 0,
+          errors: 0,
+          totalBytesRecv: 0,
+          totalBytesSent: 0,
+          samples: [],
+        };
+        const count = existing.count + 1;
+        const sumMs = existing.sumMs + metric.responseTime;
+        const sumSqMs = existing.sumSqMs + (metric.responseTime ** 2);
+        const samples = [...existing.samples, metric.responseTime];
+        return {
+          ...prev,
+          [stepName]: {
+            count,
+            minMs: Math.min(existing.minMs, metric.responseTime),
+            maxMs: Math.max(existing.maxMs, metric.responseTime),
+            sumMs,
+            sumSqMs,
+            avgMs: Math.round(sumMs / count),
+            errors: existing.errors + (metric.success ? 0 : 1),
+            totalBytesRecv: existing.totalBytesRecv + metric.bytesRecv,
+            totalBytesSent: existing.totalBytesSent + metric.bytesSent,
+            samples,
+          },
+        };
+      });
+    };
+
     try {
-      await runFlow(activeFlow, 
-        (stepId, update) => {
-          if (typeof update === 'function') {
-            setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
-          } else {
-            setStepStatuses(prev => ({ ...prev, [stepId]: update }));
-            if (update.variables) setRunVars(update.variables);
+      const startStep = (activeFlow.steps || []).find(s => s.type === 'start');
+      const isPerformance = startStep?.mode === 'performance';
+
+      const onUpdatePrimary = (stepId, update) => {
+        if (typeof update === 'function') {
+          setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
+        } else {
+          setStepStatuses(prev => ({ ...prev, [stepId]: update }));
+          if (update.variables) setRunVars(update.variables);
+        }
+      };
+
+      if (!isPerformance) {
+        await runFlow(activeFlow, onUpdatePrimary, onMetrics, ctrl.signal);
+        showToast('Flow completed ✓', 'success');
+        return;
+      }
+
+      // Performance mode: run the full flow concurrently with configured virtual users
+      const numUsers = Math.min(100, Math.max(1, parseInt(startStep?.numUsers || 1)));
+      const rampUpSeconds = Math.max(0, parseInt(startStep?.rampUpSeconds || 0));
+      const durationMode = startStep?.durationMode === 'transactions' ? 'transactions' : 'duration';
+      const durationSeconds = Math.max(1, parseInt(startStep?.durationSeconds || 60));
+      const transactionsCount = Math.max(1, parseInt(startStep?.transactionsCount || 1));
+
+      const rampMsTotal = rampUpSeconds * 1000;
+      const delayPerUserMs = numUsers > 1 ? Math.floor(rampMsTotal / (numUsers - 1)) : 0;
+      const testEndTs = Date.now() + durationSeconds * 1000;
+
+      const runUser = async (userIndex) => {
+        if (delayPerUserMs > 0 && userIndex > 0) {
+          await sleepWithAbort(delayPerUserMs * userIndex);
+        }
+
+        const onUpdate = userIndex === 0 ? onUpdatePrimary : () => {};
+
+        if (durationMode === 'transactions') {
+          for (let i = 0; i < transactionsCount; i++) {
+            if (ctrl.signal.aborted) throw new Error('Aborted');
+            try {
+              await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal);
+            } catch (err) {
+              if (err.message === 'Aborted') throw err;
+              // In load mode continue remaining iterations even if a single flow run fails
+            }
           }
-        },
-        (stepName, metric) => {
-          // Aggregate metrics per request name
-          setMetrics(prev => {
-            const existing = prev[stepName] || {
-              count: 0,
-              minMs: Infinity,
-              maxMs: 0,
-              sumMs: 0,
-              sumSqMs: 0,
-              errors: 0,
-              totalBytesRecv: 0,
-              totalBytesSent: 0,
-              samples: [],
-            };
-            const count = existing.count + 1;
-            const sumMs = existing.sumMs + metric.responseTime;
-            const sumSqMs = existing.sumSqMs + (metric.responseTime ** 2);
-            const samples = [...existing.samples, metric.responseTime];
-            return {
-              ...prev,
-              [stepName]: {
-                count,
-                minMs: Math.min(existing.minMs, metric.responseTime),
-                maxMs: Math.max(existing.maxMs, metric.responseTime),
-                sumMs,
-                sumSqMs,
-                avgMs: Math.round(sumMs / count),
-                errors: existing.errors + (metric.success ? 0 : 1),
-                totalBytesRecv: existing.totalBytesRecv + metric.bytesRecv,
-                totalBytesSent: existing.totalBytesSent + metric.bytesSent,
-                samples,
-              },
-            };
-          });
-        },
-        ctrl.signal
-      );
-      showToast('Flow completed ✓', 'success');
+          return;
+        }
+
+        while (!ctrl.signal.aborted && Date.now() < testEndTs) {
+          try {
+            await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal);
+          } catch (err) {
+            if (err.message === 'Aborted') throw err;
+            // Keep generating load during duration window despite per-run failures
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: numUsers }, (_, i) => runUser(i)));
+      showToast(`Performance run completed ✓ (${numUsers} users)`, 'success');
     } catch (e) {
       if (e.message !== 'Aborted') showToast(`Flow stopped: ${e.message}`, 'error');
     } finally { setIsRunning(false); }
