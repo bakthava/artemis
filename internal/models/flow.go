@@ -69,6 +69,14 @@ type FlowStep struct {
 	X int `json:"x"`
 	Y int `json:"y"`
 
+	// start step fields
+	Mode              string `json:"mode,omitempty"` // functional or performance
+	NumUsers          int    `json:"numUsers,omitempty"`
+	RampUpSeconds     int    `json:"rampUpSeconds,omitempty"`
+	DurationMode      string `json:"durationMode,omitempty"` // duration or transactions
+	DurationSeconds   int    `json:"durationSeconds,omitempty"`
+	TransactionsCount int    `json:"transactionsCount,omitempty"`
+
 	// request step fields
 	Request     *RequestStep `json:"request,omitempty"`
 	Extractions []Extraction `json:"extractions,omitempty"`
