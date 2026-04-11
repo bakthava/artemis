@@ -1,0 +1,37 @@
+# Build outputs
+artemis.exe
+httpx-server.exe
+httpx.exe
+build/bin/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+package-lock.json
+
+# Go
+*.o
+*.a
+*.so
+.DS_Store
+dist/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+.idea/
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+artemis.db
+
+# Frontend build
+frontend/dist/
+frontend/.cache/

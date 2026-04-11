@@ -1,0 +1,194 @@
+// HTTP API wrapper for Artemis web server
+const API_BASE = 'http://localhost:8080/api';
+
+const api = {
+  request: {
+    execute: async (request) => {
+      try {
+        const response = await fetch(`${API_BASE}/request/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || `HTTP ${response.status}`;
+          const err = new Error(message);
+          if (payload?.error?.response) {
+            err.response = payload.error.response;
+          }
+          throw err;
+        }
+
+        return payload;
+      } catch (err) {
+        if (err?.response) {
+          throw err;
+        }
+        throw new Error(`Failed to execute request: ${err.message}`);
+      }
+    },
+  },
+
+  collections: {
+    create: async (name) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to create collection: ${err.message}`);
+      }
+    },
+
+    getAll: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/collections`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch collections: ${err.message}`);
+      }
+    },
+
+    getById: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/${id}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch collection: ${err.message}`);
+      }
+    },
+
+    update: async (collection) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/${collection.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: collection.name }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to update collection: ${err.message}`);
+      }
+    },
+
+    delete: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to delete collection: ${err.message}`);
+      }
+    },
+
+    addRequest: async (collectionId, request) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/${collectionId}/requests`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to add request: ${err.message}`);
+      }
+    },
+  },
+
+  environments: {
+    create: async (name) => {
+      try {
+        const response = await fetch(`${API_BASE}/environments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to create environment: ${err.message}`);
+      }
+    },
+
+    getAll: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/environments`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch environments: ${err.message}`);
+      }
+    },
+
+    update: async (environment) => {
+      try {
+        const response = await fetch(`${API_BASE}/environments/${environment.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ variables: environment.variables }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to update environment: ${err.message}`);
+      }
+    },
+
+    delete: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/environments/${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to delete environment: ${err.message}`);
+      }
+    },
+
+    setActive: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/environments/${id}/active`, {
+          method: 'POST',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to set active environment: ${err.message}`);
+      }
+    },
+  },
+
+  history: {
+    getRecent: async (limit = 50, offset = 0) => {
+      try {
+        const response = await fetch(`${API_BASE}/history`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch history: ${err.message}`);
+      }
+    },
+
+    clear: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/history`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (err) {
+        throw new Error(`Failed to clear history: ${err.message}`);
+      }
+    },
+  },
+};
+
+export default api;
