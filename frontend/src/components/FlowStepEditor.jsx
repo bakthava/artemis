@@ -410,8 +410,8 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
               condition={step.condition || { left: '', operator: 'equals', right: '' }}
               onChange={c => upd({ condition: c })} />
             <div className="cond-var-hint">
-              💡 Use <code>{'{{_statusCode}}'}</code> for the last HTTP status code,&nbsp;
-              <code>{'{{_body}}'}</code> for the response body, or any extracted variable.
+              💡 Use <code>{'{{statusCode}}'}</code> for the last HTTP response code,&nbsp;
+              <code>{'{{body}}'}</code> for the response body, or any extracted variable.
             </div>
           </div>
 
