@@ -411,6 +411,11 @@ export default function FlowBuilder({ onClose }) {
     setSelectedEdge(null);
   }
 
+  function resetStats() {
+    setMetrics({});
+    showToast('Test statistics reset', 'info');
+  }
+
   // ── Run / stop ────────────────────────────────────────────────────────────
   async function handleRun() {
     if (isRunning) { abortRef.current?.abort(); return; }
@@ -626,6 +631,7 @@ export default function FlowBuilder({ onClose }) {
             {isRunning ? '■ Stop' : '▶ Run'}
           </button>
           <button className="flow-btn" onClick={saveFlow}>💾 Save</button>
+          <button className="flow-btn" onClick={resetStats} disabled={Object.keys(metrics).length === 0}>↺ Reset Stats</button>
           {/* + Step dropdown */}
           <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
             <button className="flow-btn" onClick={() => setShowAddMenu(m => !m)}>+ Step ▾</button>
