@@ -8,6 +8,7 @@ export const useCollections = () => {
   const [error, setError] = useState(null);
   const ctx = useAppContext();
   const collectionsVersion = ctx?.collectionsVersion ?? 0;
+  const refreshCollections = ctx?.refreshCollections;
 
   const fetchCollections = useCallback(async () => {
     setLoading(true);
@@ -25,43 +26,46 @@ export const useCollections = () => {
   const createCollection = useCallback(async (name) => {
     try {
       const newCollection = await api.collections.create(name);
-      setCollections([...collections, newCollection]);
+      setCollections(prev => [...prev, newCollection]);
+      refreshCollections?.();
       return newCollection;
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [collections]);
+  }, [refreshCollections]);
 
   const deleteCollection = useCallback(async (id) => {
     try {
       await api.collections.delete(id);
-      setCollections(collections.filter(c => c.id !== id));
+      setCollections(prev => prev.filter(c => c.id !== id));
+      refreshCollections?.();
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [collections]);
+  }, [refreshCollections]);
 
   const updateCollection = useCallback(async (collection) => {
     try {
       await api.collections.update(collection);
-      setCollections(collections.map(c => c.id === collection.id ? collection : c));
+      setCollections(prev => prev.map(c => c.id === collection.id ? collection : c));
+      refreshCollections?.();
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [collections]);
+  }, [refreshCollections]);
 
   const addRequest = useCallback(async (collectionId, request) => {
     try {
       await api.collections.addRequest(collectionId, request);
-      await fetchCollections(); // Refresh to get updated requests
+      refreshCollections?.();
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [fetchCollections]);
+  }, [refreshCollections]);
 
   useEffect(() => {
     fetchCollections();
@@ -178,6 +182,7 @@ export const useHistory = (limit = 50) => {
   const [error, setError] = useState(null);
   const ctx = useAppContext();
   const historyVersion = ctx?.historyVersion ?? 0;
+  const refreshHistory = ctx?.refreshHistory;
 
   const fetchHistory = useCallback(async (offset = 0) => {
     setLoading(true);
@@ -196,11 +201,12 @@ export const useHistory = (limit = 50) => {
     try {
       await api.history.clear();
       setHistory([]);
+      refreshHistory?.();
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, []);
+  }, [refreshHistory]);
 
   useEffect(() => {
     fetchHistory();

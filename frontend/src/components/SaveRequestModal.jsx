@@ -52,6 +52,7 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
       setSelectedCollection(newColl.id);
       setNewCollectionName('');
       setIsCreatingCollection(false);
+      onSaveComplete?.();
       showToast('Collection created', 'success');
     } catch (err) {
       showToast(`Error creating collection: ${err.message}`, 'error');
