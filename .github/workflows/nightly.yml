@@ -50,6 +50,12 @@ jobs:
             npm install
           fi
 
+      - name: Build frontend assets
+        shell: bash
+        run: |
+          cd frontend
+          npm run build
+
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         shell: bash
