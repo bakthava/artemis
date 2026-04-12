@@ -424,39 +424,64 @@ func (s *HTTPServer) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
 
-// LoadConfig reads configuration from config.json
-func LoadConfig(filePath string) (*Config, error) {
-	data, err := os.ReadFile(filePath)
+func defaultConfig() *Config {
+	return &Config{
+		Port:           8080,
+		Host:           "localhost",
+		Timeout:        30,
+		MaxHistorySize: 100,
+		DBPath:         "artemis.db",
+	}
+}
+
+func findConfigFilePath() (string, bool) {
+	exePath, err := os.Executable()
 	if err != nil {
-		log.Printf("Warning: Could not read config.json, using defaults: %v", err)
-		// Return default config
-		return &Config{
-			Port:           8080,
-			Host:           "localhost",
-			Timeout:        30,
-			MaxHistorySize: 100,
-			DBPath:         "artemis.db",
-		}, nil
+		return "", false
 	}
 
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		log.Printf("Warning: Could not parse config.json, using defaults: %v", err)
-		return &Config{
-			Port:           8080,
-			Host:           "localhost",
-			Timeout:        30,
-			MaxHistorySize: 100,
-			DBPath:         "artemis.db",
-		}, nil
+	exeDir := filepath.Dir(exePath)
+	candidates := []string{
+		filepath.Join(exeDir, "config.json"),
+		filepath.Join(".", "config.json"),
 	}
 
-	return &config, nil
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c, true
+		}
+	}
+
+	return "", false
+}
+
+// LoadConfig reads configuration from config.json.
+func LoadConfig() (*Config, error) {
+	config := defaultConfig()
+	configPath, found := findConfigFilePath()
+	if !found {
+		log.Printf("Warning: config.json not found, using defaults")
+		return config, nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Printf("Warning: Could not read %s, using defaults: %v", configPath, err)
+		return config, nil
+	}
+
+	if err := json.Unmarshal(data, config); err != nil {
+		log.Printf("Warning: Could not parse %s, using defaults: %v", configPath, err)
+		return defaultConfig(), nil
+	}
+
+	log.Printf("Loaded config from %s", configPath)
+	return config, nil
 }
 
 func main() {
 	// Load configuration
-	config, err := LoadConfig("config.json")
+	config, err := LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

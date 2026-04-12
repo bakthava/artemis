@@ -83,6 +83,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist\${{ matrix.artifact_name }}\frontend -Force | Out-Null
           Copy-Item build/bin/artemis.exe dist/${{ matrix.artifact_name }}/artemis.exe -Force
+          Copy-Item config.json dist/${{ matrix.artifact_name }}/config.json -Force
           Copy-Item -Recurse frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist -Force
           Compress-Archive -Path dist/${{ matrix.artifact_name }}/* -DestinationPath dist/${{ matrix.artifact_name }}.zip -Force
 
@@ -92,6 +93,7 @@ jobs:
         run: |
           mkdir -p dist/${{ matrix.artifact_name }}/frontend
           cp build/bin/artemis dist/${{ matrix.artifact_name }}/artemis
+          cp config.json dist/${{ matrix.artifact_name }}/config.json
           cp -r frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist
           tar -czf dist/${{ matrix.artifact_name }}.tar.gz -C dist ${{ matrix.artifact_name }}
 
@@ -136,6 +138,7 @@ jobs:
         run: |
           mkdir -p dist/${{ matrix.artifact_name }}/frontend
           cp build/bin/artemis dist/${{ matrix.artifact_name }}/artemis
+          cp config.json dist/${{ matrix.artifact_name }}/config.json
           cp -R frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist
           ditto -c -k dist/${{ matrix.artifact_name }} dist/${{ matrix.artifact_name }}.zip
 
