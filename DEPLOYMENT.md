@@ -8,6 +8,78 @@
 
 ## Quick Start
 
+### Cross-Platform Releases
+
+Artemis now supports packaged builds for:
+- Windows 10 and Windows 11
+- Linux
+- macOS
+
+Release builds are automated by GitHub Actions:
+- Workflow file: `.github/workflows/release.yml`
+- Trigger: push tag `v*` (for example `v1.0.0`) or manual dispatch
+
+Nightly builds are also automated:
+- Workflow file: `.github/workflows/nightly.yml`
+- Trigger: daily schedule + manual dispatch
+- Output: CI artifacts only (no GitHub Release publish)
+
+Generated artifacts:
+- `artemis-windows-amd64.zip`
+- `artemis-linux-amd64.tar.gz`
+- `artemis-linux-amd64.AppImage`
+- `artemis-macos.zip`
+- `SHA256SUMS.txt`
+
+### Create a Release (Maintainer)
+
+1. Commit and push your changes
+2. Tag a version:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+3. Wait for the workflow to finish
+4. Download artifacts from the GitHub Release page
+
+### Nightly Build Usage
+
+1. Open Actions tab
+2. Run `Nightly Build` manually (or wait for scheduled run)
+3. Download artifacts from workflow run summary
+
+Nightly artifact examples:
+- `artemis-nightly-windows-amd64.zip`
+- `artemis-nightly-linux-amd64.tar.gz`
+- `artemis-nightly-linux-amd64.AppImage`
+- `artemis-nightly-macos.zip`
+
+### macOS Signing and Notarization Placeholders
+
+The release workflow includes gated placeholder steps for macOS signing and notarization.
+
+Add these repository secrets to enable those steps:
+- `APPLE_DEVELOPER_ID_APPLICATION`
+- `APPLE_CERT_BASE64`
+- `APPLE_CERT_PASSWORD`
+- `KEYCHAIN_PASSWORD`
+- `APPLE_NOTARY_APPLE_ID`
+- `APPLE_NOTARY_TEAM_ID`
+- `APPLE_NOTARY_APP_PASSWORD`
+
+By default, those steps do not execute until the required secrets are present.
+
+### Local Build Notes
+
+For desktop GUI apps, prefer native builds on each OS:
+- Build Windows on Windows
+- Build Linux on Linux
+- Build macOS on macOS
+
+This avoids cross-compilation runtime issues for WebView and platform libraries.
+
 ### For Users
 1. Download `artemis.exe` (11.6 MB)
 2. Double-click to launch

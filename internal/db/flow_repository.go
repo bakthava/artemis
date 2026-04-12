@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +19,14 @@ type FlowRepository struct {
 }
 
 const MaxFlowsPerProject = 200
+
+// FlowQueryOptions defines optional server-side query controls for listing flows.
+type FlowQueryOptions struct {
+	Name   string
+	Sort   string
+	Limit  int
+	Offset int
+}
 
 // NewFlowRepository creates a new flow repository
 func NewFlowRepository(db *DB) *FlowRepository {
@@ -67,6 +77,11 @@ func (r *FlowRepository) countFlows() (int, error) {
 
 // GetAll retrieves all stored flows
 func (r *FlowRepository) GetAll() ([]*models.Flow, error) {
+	return r.GetAllWithOptions(FlowQueryOptions{})
+}
+
+// GetAllWithOptions retrieves stored flows with optional filtering/sorting/pagination.
+func (r *FlowRepository) GetAllWithOptions(options FlowQueryOptions) ([]*models.Flow, error) {
 	var flows []*models.Flow
 	iter := r.db.conn.NewIterator(util.BytesPrefix([]byte("flow:")), nil)
 	defer iter.Release()
@@ -80,7 +95,66 @@ func (r *FlowRepository) GetAll() ([]*models.Flow, error) {
 	if flows == nil {
 		flows = []*models.Flow{}
 	}
-	return flows, nil
+
+	// Filter by flow name (case-insensitive contains)
+	nameQuery := strings.TrimSpace(strings.ToLower(options.Name))
+	if nameQuery != "" {
+		filtered := make([]*models.Flow, 0, len(flows))
+		for _, f := range flows {
+			if strings.Contains(strings.ToLower(f.Name), nameQuery) {
+				filtered = append(filtered, f)
+			}
+		}
+		flows = filtered
+	}
+
+	// Sort results
+	switch options.Sort {
+	case "name-asc":
+		sort.SliceStable(flows, func(i, j int) bool {
+			return strings.ToLower(flows[i].Name) < strings.ToLower(flows[j].Name)
+		})
+	case "name-desc":
+		sort.SliceStable(flows, func(i, j int) bool {
+			return strings.ToLower(flows[i].Name) > strings.ToLower(flows[j].Name)
+		})
+	case "updated-asc":
+		sort.SliceStable(flows, func(i, j int) bool {
+			return flows[i].UpdatedAt < flows[j].UpdatedAt
+		})
+	case "steps-desc":
+		sort.SliceStable(flows, func(i, j int) bool {
+			li := len(flows[i].Steps)
+			lj := len(flows[j].Steps)
+			if li == lj {
+				return flows[i].UpdatedAt > flows[j].UpdatedAt
+			}
+			return li > lj
+		})
+	default:
+		// updated-desc (default)
+		sort.SliceStable(flows, func(i, j int) bool {
+			return flows[i].UpdatedAt > flows[j].UpdatedAt
+		})
+	}
+
+	// Pagination
+	offset := options.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(flows) {
+		return []*models.Flow{}, nil
+	}
+	limit := options.Limit
+	if limit <= 0 {
+		return flows[offset:], nil
+	}
+	end := offset + limit
+	if end > len(flows) {
+		end = len(flows)
+	}
+	return flows[offset:end], nil
 }
 
 // GetByID retrieves a single flow by its ID

@@ -41,6 +41,44 @@ export default function MetricsTable({ metrics, flowName = 'untitled' }) {
     avgBytes: Math.round((m.totalBytesRecv + m.totalBytesSent) / m.count),
   }));
 
+  const totalRaw = Object.values(metrics).reduce((acc, m) => {
+    acc.count += m.count || 0;
+    acc.errors += m.errors || 0;
+    acc.sumMs += m.sumMs || 0;
+    acc.sumSqMs += m.sumSqMs || 0;
+    acc.minMs = Math.min(acc.minMs, m.minMs === Infinity ? Infinity : (m.minMs || 0));
+    acc.maxMs = Math.max(acc.maxMs, m.maxMs || 0);
+    acc.totalBytesRecv += m.totalBytesRecv || 0;
+    acc.totalBytesSent += m.totalBytesSent || 0;
+    if (Array.isArray(m.samples) && m.samples.length > 0) acc.samples.push(...m.samples);
+    return acc;
+  }, {
+    count: 0,
+    errors: 0,
+    sumMs: 0,
+    sumSqMs: 0,
+    minMs: Infinity,
+    maxMs: 0,
+    totalBytesRecv: 0,
+    totalBytesSent: 0,
+    samples: [],
+  });
+
+  const totalRow = {
+    name: 'TOTAL',
+    count: totalRaw.count,
+    minMs: totalRaw.minMs === Infinity ? 0 : totalRaw.minMs,
+    avgMs: totalRaw.count > 0 ? Math.round(totalRaw.sumMs / totalRaw.count) : 0,
+    maxMs: totalRaw.maxMs,
+    p90Ms: getPercentile(totalRaw.samples, 90),
+    stdDev: getStdDev(totalRaw),
+    errorPct: totalRaw.count > 0 ? ((totalRaw.errors / totalRaw.count) * 100).toFixed(1) : '0.0',
+    throughput: totalRaw.sumMs > 0 ? (totalRaw.count / (totalRaw.sumMs / 1000)).toFixed(2) : '0.00',
+    recvKBps: totalRaw.sumMs > 0 ? (totalRaw.totalBytesRecv / (totalRaw.sumMs / 1000) / 1024).toFixed(2) : '0.00',
+    sentKBps: totalRaw.sumMs > 0 ? (totalRaw.totalBytesSent / (totalRaw.sumMs / 1000) / 1024).toFixed(2) : '0.00',
+    avgBytes: totalRaw.count > 0 ? Math.round((totalRaw.totalBytesRecv + totalRaw.totalBytesSent) / totalRaw.count) : 0,
+  };
+
   return (
     <div>
       <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
@@ -136,6 +174,29 @@ export default function MetricsTable({ metrics, flowName = 'untitled' }) {
                 <td style={{ padding: '8px 12px', textAlign: 'right', color: '#cbd5e1' }}>{row.avgBytes}</td>
               </tr>
             ))}
+            <tr style={{
+              borderTop: '2px solid #64748b',
+              borderBottom: '1px solid #334155',
+              backgroundColor: '#111827',
+            }}>
+              <td style={{ padding: '9px 12px', color: '#f8fafc', fontWeight: 700 }}>{totalRow.name}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.count}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.minMs}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.avgMs}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.maxMs}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.p90Ms}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.stdDev}</td>
+              <td style={{
+                padding: '9px 12px',
+                textAlign: 'right',
+                color: parseFloat(totalRow.errorPct) > 0 ? '#fca5a5' : '#f8fafc',
+                fontWeight: 700,
+              }}>{totalRow.errorPct}%</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.throughput}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.recvKBps}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.sentKBps}</td>
+              <td style={{ padding: '9px 12px', textAlign: 'right', color: '#f8fafc', fontWeight: 700 }}>{totalRow.avgBytes}</td>
+            </tr>
           </tbody>
         </table>
       </div>

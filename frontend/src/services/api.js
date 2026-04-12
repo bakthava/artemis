@@ -193,9 +193,15 @@ const api = {
   },
 
   flows: {
-    getAll: async () => {
+    getAll: async (options = {}) => {
       try {
-        const response = await fetch(`${API_BASE}/flows`);
+        const params = new URLSearchParams();
+        if (options.name) params.set('name', options.name);
+        if (options.sort) params.set('sort', options.sort);
+        if (Number.isFinite(options.limit)) params.set('limit', String(options.limit));
+        if (Number.isFinite(options.offset)) params.set('offset', String(options.offset));
+        const qs = params.toString();
+        const response = await fetch(`${API_BASE}/flows${qs ? `?${qs}` : ''}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
       } catch (err) {

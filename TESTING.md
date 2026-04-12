@@ -258,6 +258,43 @@ wails build
 5. No SSL certificate validation bypass
 6. No request templating
 
+---
+
+## Flow Discoverability Test Matrix (200 Flows)
+
+### Test 9: Search and Highlight
+1. Open Flow Builder
+2. Create or load multiple flows with distinct names (at least 20)
+3. In Saved Flows search, type part of a known flow name
+4. Verify:
+   - Result count updates
+   - Matching name text is highlighted
+   - Non-matching flows are hidden
+
+### Test 10: Filter Mode and Sorting
+1. With multiple flows loaded, switch search mode from **Name only** to **Name + metadata**
+2. Verify results expand when searching by step-type text (for example "condition")
+3. Change sort mode through all options
+4. Verify ordering changes correctly (updated/date/name/step count)
+
+### Test 11: Keyboard Navigation
+1. Focus search and type a query that returns several flows
+2. Press Arrow Down/Up to move selection
+3. Press Enter to open selected flow
+4. Press Esc to clear query
+5. Verify expected flow opens and search resets
+
+### Test 12: Active Flow Pinning
+1. Select a flow
+2. Search for a different keyword that would hide current flow
+3. Verify selected flow remains visible as pinned active entry
+
+### Test 13: Scale Check (200 Flows)
+1. Ensure approximately 200 flows exist
+2. Type rapidly in search box
+3. Verify list remains responsive and does not stutter noticeably
+4. Verify sort/filter controls continue to respond quickly
+
 ### Future Enhancements
 - [ ] Variable interpolation in URLs/headers/body
 - [ ] Syntax highlighting for JSON/XML

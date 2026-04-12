@@ -1,6 +1,7 @@
 package main
 
 import (
+	"artemis/internal/db"
 	"artemis/internal/models"
 	"context"
 	"encoding/json"
@@ -9,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -300,7 +303,29 @@ func (s *HTTPServer) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleGetFlows(w http.ResponseWriter, r *http.Request) {
 	s.handleCORS(w, r)
-	flows, err := s.app.GetFlows()
+	q := r.URL.Query()
+	options := db.FlowQueryOptions{
+		Name: strings.TrimSpace(q.Get("name")),
+		Sort: strings.TrimSpace(q.Get("sort")),
+	}
+	if rawLimit := strings.TrimSpace(q.Get("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		options.Limit = limit
+	}
+	if rawOffset := strings.TrimSpace(q.Get("offset")); rawOffset != "" {
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil {
+			http.Error(w, "invalid offset", http.StatusBadRequest)
+			return
+		}
+		options.Offset = offset
+	}
+
+	flows, err := s.app.GetFlowsWithOptions(options)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

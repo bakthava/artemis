@@ -53,6 +53,34 @@ A lightweight, fast HTTP client for Windows. Simple, portable, and powerful.
 - **Clear History**: Remove saved request history
 - **Reset Data**: Clear all collections and environments (cannot undo)
 
+## 🔎 Flow Builder Discoverability (Up to 200 Flows)
+
+When you have many flows, use the Saved Flows panel controls inside Flow Builder.
+
+### Search Flows
+- Use the search box in Saved Flows to find by flow name
+- Press `/` to instantly focus search (when not typing in another input)
+- Matching text is highlighted in each result
+
+### Filter Scope
+- **Name only**: Fastest and best for direct flow lookup
+- **Name + metadata**: Also matches step count and step types
+
+### Sort Options
+- **Updated ↓** (default): Most recently updated first
+- **Updated ↑**: Oldest first
+- **Name A-Z / Z-A**
+- **Most steps**
+
+### Keyboard Navigation in Search
+- **Arrow Down / Arrow Up**: Move through result list
+- **Enter**: Open highlighted result
+- **Esc**: Clear search
+
+### Helpful Behavior
+- The currently selected flow stays visible while searching (pinned) so you do not lose context
+- Search and sort preferences are restored automatically on next open
+
 ## 🔧 Configuration
 
 ### config.json
@@ -114,6 +142,7 @@ Ctrl+K       Focus URL input field
 Ctrl+Enter   Send request
 Ctrl+S       Save current request
 F5           Refresh (restores draft)
+/            Focus Flow Builder search (when Flow Builder is open)
 ```
 
 ## 🧪 Testing Your Requests

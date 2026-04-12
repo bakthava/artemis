@@ -153,6 +153,10 @@ func (a *App) GetFlows() ([]*models.Flow, error) {
 	return a.flowRepository.GetAll()
 }
 
+func (a *App) GetFlowsWithOptions(options db.FlowQueryOptions) ([]*models.Flow, error) {
+	return a.flowRepository.GetAllWithOptions(options)
+}
+
 func (a *App) GetFlow(id string) (*models.Flow, error) {
 	return a.flowRepository.GetByID(id)
 }

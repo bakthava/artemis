@@ -7,6 +7,8 @@ import MetricsTable from './MetricsTable';
 
 const NODE_W = 220;
 const NODE_H = 68;
+const FLOW_BUILDER_LAST_STATE_KEY = 'artemis.flowBuilder.lastState.v1';
+const FLOW_DISCOVERY_PREFS_KEY = 'artemis.flowBuilder.discovery.v1';
 
 const STEP_TYPES = [
   { type: 'start',        icon: '▶',  label: 'Start',          color: '#059669' },
@@ -59,6 +61,113 @@ function mkFlow() {
     edges: [],
     variables: {},
   };
+}
+
+function toEditableFlow(flow) {
+  const steps = (flow?.steps || []).map((s, i) => ({
+    ...s,
+    x: s.x > 0 ? s.x : 80 + (i % 3) * (NODE_W + 60),
+    y: s.y > 0 ? s.y : 80 + Math.floor(i / 3) * (NODE_H + 60),
+  }));
+  return { ...JSON.parse(JSON.stringify({ ...flow, steps })), edges: flow?.edges || [] };
+}
+
+function readLastFlowState() {
+  try {
+    const raw = window.localStorage.getItem(FLOW_BUILDER_LAST_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.flow || !Array.isArray(parsed.flow.steps)) return null;
+    return parsed.flow;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastFlowState(flow) {
+  try {
+    const payload = {
+      savedAt: Date.now(),
+      flow: sanitizeForApi(flow),
+    };
+    window.localStorage.setItem(FLOW_BUILDER_LAST_STATE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage write failures (private mode/quota)
+  }
+}
+
+function readFlowDiscoveryPrefs() {
+  const defaults = {
+    query: '',
+    sortMode: 'updated-desc',
+    searchMode: 'name-meta',
+  };
+  try {
+    const raw = window.localStorage.getItem(FLOW_DISCOVERY_PREFS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    return {
+      query: typeof parsed?.query === 'string' ? parsed.query : defaults.query,
+      sortMode: typeof parsed?.sortMode === 'string' ? parsed.sortMode : defaults.sortMode,
+      searchMode: typeof parsed?.searchMode === 'string' ? parsed.searchMode : defaults.searchMode,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function writeFlowDiscoveryPrefs(prefs) {
+  try {
+    window.localStorage.setItem(FLOW_DISCOVERY_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore storage write failures (private mode/quota)
+  }
+}
+
+function fuzzySubsequenceMatch(query, target) {
+  if (!query) return true;
+  let qi = 0;
+  for (let i = 0; i < target.length && qi < query.length; i++) {
+    if (query[qi] === target[i]) qi++;
+  }
+  return qi === query.length;
+}
+
+function renderHighlightedName(name, query) {
+  const n = name || '';
+  const q = (query || '').trim();
+  if (!q) return n;
+  const lo = n.toLowerCase();
+  const idx = lo.indexOf(q.toLowerCase());
+  if (idx === -1) return n;
+
+  const before = n.slice(0, idx);
+  const match = n.slice(idx, idx + q.length);
+  const after = n.slice(idx + q.length);
+  return (
+    <>
+      {before}
+      <mark className="flow-list-hl">{match}</mark>
+      {after}
+    </>
+  );
+}
+
+function collectStepSearchText(steps = []) {
+  const parts = [];
+  const walk = (items) => {
+    (items || []).forEach((s) => {
+      if (s?.name) parts.push(String(s.name));
+      if (s?.type) parts.push(String(s.type));
+      if (s?.request?.method) parts.push(String(s.request.method));
+      if (s?.request?.url) parts.push(String(s.request.url));
+      if (s?.thenSteps?.length) walk(s.thenSteps);
+      if (s?.elseSteps?.length) walk(s.elseSteps);
+      if (s?.loopSteps?.length) walk(s.loopSteps);
+    });
+  };
+  walk(steps);
+  return parts.join(' ').toLowerCase();
 }
 
 function sanitizeForApi(value) {
@@ -147,7 +256,7 @@ const ArrowDefs = () => (
 );
 
 // ── Step node ─────────────────────────────────────────────────────────────────
-function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, onDoubleClickNode, onContextMenuNode, isTarget }) {
+function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveStep, onConnectStart, onConnectTarget, onDoubleClickNode, onContextMenuNode, isTarget, branchLabels = [] }) {
   const meta  = TYPE_META[step.type] || { icon: '?', color: '#6b7280' };
   const st    = stepStatus.status || 'idle';
   const durMs = stepStatus.durationMs;
@@ -203,6 +312,19 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
           <div className="terminal-node-name">{step.name}</div>
           <div className="terminal-node-pill">{step.type === 'start' ? 'ENTRY' : 'EXIT'}</div>
         </div>
+
+        {branchLabels.length > 0 && (
+          <div className="fn-branch-badges">
+            {branchLabels.map(lbl => (
+              <span
+                key={`${step.id}-${lbl}`}
+                className={`fn-branch-pill ${lbl === 'then' ? 'fn-branch-then' : 'fn-branch-else'}`}
+              >
+                {lbl.toUpperCase()}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Connection handle for START - clickable circle on right edge */}
         {step.type === 'start' && (
@@ -293,6 +415,19 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
         )}
       </div>
 
+      {branchLabels.length > 0 && (
+        <div className="fn-branch-badges">
+          {branchLabels.map(lbl => (
+            <span
+              key={`${step.id}-${lbl}`}
+              className={`fn-branch-pill ${lbl === 'then' ? 'fn-branch-then' : 'fn-branch-else'}`}
+            >
+              {lbl.toUpperCase()}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Status */}
       <div className="fn-status">
         {st === 'running' && <span className="spin-icon" style={{ color: '#3b82f6' }}>⟳</span>}
@@ -340,6 +475,13 @@ export default function FlowBuilder({ onClose }) {
 
   const [showVars,     setShowVars]     = useState(false);
   const [showAddMenu,  setShowAddMenu]  = useState(false);
+  const prefs = useMemo(() => readFlowDiscoveryPrefs(), []);
+  const [flowQuery, setFlowQuery] = useState(prefs.query);
+  const [debouncedFlowQuery, setDebouncedFlowQuery] = useState(prefs.query.trim().toLowerCase());
+  const [flowSortMode, setFlowSortMode] = useState(prefs.sortMode);
+  const [flowSearchMode, setFlowSearchMode] = useState(prefs.searchMode);
+  const [resultCursor, setResultCursor] = useState(0);
+  const flowSearchRef = useRef(null);
 
   // Connection drawing
   const connectFromRef = useRef(null);   // { fromId, fromLabel }
@@ -347,24 +489,188 @@ export default function FlowBuilder({ onClose }) {
   const [connLine,     setConnLine]     = useState(null);   // { x1,y1,x2,y2 } for SVG
   const [connTarget,   setConnTarget]   = useState(null);   // highlighted drop target
 
-  useEffect(() => { loadFlows(); }, []);
+  useEffect(() => { loadFlows({ restoreActive: true }); }, []);
 
-  async function loadFlows() {
-    try { setFlows(await api.flows.getAll() || []); }
+  useEffect(() => {
+    writeLastFlowState(activeFlow);
+  }, [activeFlow]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedFlowQuery(flowQuery.trim().toLowerCase());
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [flowQuery]);
+
+  useEffect(() => {
+    writeFlowDiscoveryPrefs({
+      query: flowQuery,
+      sortMode: flowSortMode,
+      searchMode: flowSearchMode,
+    });
+  }, [flowQuery, flowSortMode, flowSearchMode]);
+
+  useEffect(() => {
+    const onWindowKeyDown = (e) => {
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target?.tagName || '').toLowerCase();
+        const editable = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
+        if (editable) return;
+        e.preventDefault();
+        flowSearchRef.current?.focus();
+        flowSearchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onWindowKeyDown);
+    return () => window.removeEventListener('keydown', onWindowKeyDown);
+  }, []);
+
+  async function loadFlows(options = {}) {
+    const { restoreActive = false } = options;
+    try {
+      const allFlows = await api.flows.getAll() || [];
+      setFlows(allFlows);
+
+      if (!restoreActive) return;
+
+      const lastFlow = readLastFlowState();
+      if (lastFlow?.id) {
+        const stillExists = allFlows.some(f => f.id === lastFlow.id);
+        if (stillExists) {
+          setActiveFlow(toEditableFlow(lastFlow));
+          setSelectedId(null);
+          setSelectedEdge(null);
+          setStepStatuses({});
+          setRunVars({});
+          return;
+        }
+      }
+
+      if (lastFlow && !lastFlow.id) {
+        setActiveFlow(toEditableFlow(lastFlow));
+        setSelectedId(null);
+        setSelectedEdge(null);
+        setStepStatuses({});
+        setRunVars({});
+      }
+    }
     catch (e) { showToast(`Load flows: ${e.message}`, 'error'); }
   }
 
   function selectFlow(f) {
-    const steps = (f.steps || []).map((s, i) => ({
-      ...s,
-      x: s.x > 0 ? s.x : 80 + (i % 3) * (NODE_W + 60),
-      y: s.y > 0 ? s.y : 80 + Math.floor(i / 3) * (NODE_H + 60),
-    }));
-    setActiveFlow({ ...JSON.parse(JSON.stringify({ ...f, steps })), edges: f.edges || [] });
+    setActiveFlow(toEditableFlow(f));
     setSelectedId(null);
     setSelectedEdge(null);
     setStepStatuses({});
     setRunVars({});
+  }
+
+  const flowsForDiscovery = useMemo(() => {
+    const base = [...(flows || [])];
+    if (!activeFlow) return base;
+
+    if (activeFlow.id) {
+      const idx = base.findIndex(f => f.id === activeFlow.id);
+      if (idx >= 0) {
+        base[idx] = { ...base[idx], ...activeFlow };
+      } else {
+        base.unshift(activeFlow);
+      }
+      return base;
+    }
+
+    // Include unsaved draft flow in discovery so search works before first save.
+    const hasUsableDraft = (activeFlow.name && activeFlow.name.trim()) || (activeFlow.steps || []).length > 1;
+    if (hasUsableDraft) {
+      base.unshift({ ...activeFlow, id: '__draft_active__' });
+    }
+    return base;
+  }, [flows, activeFlow]);
+
+  const discoveredFlows = useMemo(() => {
+    const q = debouncedFlowQuery;
+    const enriched = (flowsForDiscovery || []).map(f => {
+      const name = (f.name || '').toLowerCase();
+      const stepCount = (f.steps || []).length;
+      const stepText = collectStepSearchText(f.steps || []);
+      const meta = `${name} ${stepCount} ${stepText}`;
+      const includesName = q ? name.includes(q) : true;
+      const includesMeta = q ? meta.includes(q) : true;
+      const fuzzyName = q ? fuzzySubsequenceMatch(q, name) : true;
+
+      let score = 0;
+      if (!q) score = 10;
+      else if (includesName) score = name.startsWith(q) ? 100 : 80;
+      else if (includesMeta) score = 60;
+      else if (fuzzyName) score = 35;
+
+      const matched = !q
+        ? true
+        : includesName || fuzzyName || (flowSearchMode === 'name-meta' && includesMeta) || includesMeta;
+
+      return {
+        flow: f,
+        score,
+        matched,
+        stepCount,
+        updatedAtTs: f.updatedAt ? new Date(f.updatedAt).getTime() : 0,
+      };
+    }).filter(x => x.matched);
+
+    enriched.sort((a, b) => {
+      if (flowSortMode === 'name-asc') return (a.flow.name || '').localeCompare(b.flow.name || '');
+      if (flowSortMode === 'name-desc') return (b.flow.name || '').localeCompare(a.flow.name || '');
+      if (flowSortMode === 'steps-desc') return b.stepCount - a.stepCount || b.score - a.score;
+      if (flowSortMode === 'updated-asc') return a.updatedAtTs - b.updatedAtTs || b.score - a.score;
+      return b.updatedAtTs - a.updatedAtTs || b.score - a.score;
+    });
+
+    if (q) {
+      enriched.sort((a, b) => b.score - a.score || 0);
+    }
+
+    return enriched.map(x => x.flow);
+  }, [flowsForDiscovery, debouncedFlowQuery, flowSortMode, flowSearchMode]);
+
+  const visibleFlows = useMemo(() => {
+    if (!activeFlow?.id) return discoveredFlows;
+    if (!debouncedFlowQuery) return discoveredFlows;
+    if (discoveredFlows.some(f => f.id === activeFlow.id)) return discoveredFlows;
+    const activeFromAll = (flowsForDiscovery || []).find(f => f.id === activeFlow.id);
+    if (!activeFromAll) return discoveredFlows;
+    return [{ ...activeFromAll, _pinnedActive: true }, ...discoveredFlows];
+  }, [discoveredFlows, activeFlow.id, flowsForDiscovery, debouncedFlowQuery]);
+
+  useEffect(() => {
+    setResultCursor(prev => {
+      if (!visibleFlows.length) return 0;
+      return Math.max(0, Math.min(prev, visibleFlows.length - 1));
+    });
+  }, [visibleFlows]);
+
+  function handleFlowSearchKeyDown(e) {
+    if (!visibleFlows.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setResultCursor(c => Math.min(c + 1, visibleFlows.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setResultCursor(c => Math.max(c - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = visibleFlows[resultCursor] || visibleFlows[0];
+      if (target) selectFlow(target);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setFlowQuery('');
+      setResultCursor(0);
+    }
   }
 
   async function saveFlow() {
@@ -745,6 +1051,9 @@ export default function FlowBuilder({ onClose }) {
       }
     }
 
+    const startBranchRoots = new Set((nextMap.get(start.id) || []).filter(Boolean));
+    const stepById = new Map(allSteps.map(s => [s.id, s]));
+
     // If a target node is selected for compact mode, show path START -> target.
     let ids = null;
     if (minimizedTargetId && minimizedTargetId !== start.id) {
@@ -775,19 +1084,34 @@ export default function FlowBuilder({ onClose }) {
     }
 
     if (!ids) {
-      const nextEdge = (activeFlow.edges || []).find(e => e.from === start.id);
-      let topNodeId = nextEdge?.to;
+      ids = new Set([start.id, ...startBranchRoots]);
 
-      if (!topNodeId) {
+      // If START has no outgoing edge, keep one top candidate for orientation.
+      if (ids.size === 1) {
         const candidates = allSteps.filter(s => s.id !== start.id && s.type !== 'end');
         if (candidates.length > 0) {
           candidates.sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
-          topNodeId = candidates[0].id;
+          ids.add(candidates[0].id);
         }
       }
+    }
 
-      ids = new Set([start.id]);
-      if (topNodeId) ids.add(topNodeId);
+    // Keep all direct branches from START visible in compact mode for quick branch switching.
+    startBranchRoots.forEach(id => ids.add(id));
+
+    // Keep IF/ELSE sibling branches visible together for any visible condition node.
+    const conditionQueue = [...ids].filter(id => stepById.get(id)?.type === 'condition');
+    const seenConditions = new Set(conditionQueue);
+    while (conditionQueue.length > 0) {
+      const condId = conditionQueue.shift();
+      const nexts = nextMap.get(condId) || [];
+      nexts.forEach(n => {
+        if (!ids.has(n)) ids.add(n);
+        if (stepById.get(n)?.type === 'condition' && !seenConditions.has(n)) {
+          seenConditions.add(n);
+          conditionQueue.push(n);
+        }
+      });
     }
 
     // Keep orphan/disconnected steps visible as separate mini-flows in compact mode.
@@ -798,8 +1122,53 @@ export default function FlowBuilder({ onClose }) {
     return ids;
   }, [activeFlow.steps, activeFlow.edges, isFlowMinimized, minimizedTargetId]);
 
-  const renderedSteps = (activeFlow.steps || []).filter(s => visibleStepIds.has(s.id));
-  const renderedEdges = (edges || []).filter(e => visibleStepIds.has(e.from) && visibleStepIds.has(e.to));
+  const stepFilterQuery = debouncedFlowQuery;
+  const matchedStepIds = useMemo(() => {
+    if (!stepFilterQuery) return null;
+    const ids = new Set();
+    (activeFlow.steps || []).forEach((s) => {
+      const haystack = [
+        s.name || '',
+        s.type || '',
+        s.request?.method || '',
+        s.request?.url || '',
+      ].join(' ').toLowerCase();
+      if (haystack.includes(stepFilterQuery)) ids.add(s.id);
+    });
+    return ids;
+  }, [activeFlow.steps, stepFilterQuery]);
+
+  const effectiveVisibleStepIds = useMemo(() => {
+    if (!matchedStepIds) return visibleStepIds;
+    const ids = new Set();
+    visibleStepIds.forEach((id) => {
+      if (matchedStepIds.has(id)) ids.add(id);
+    });
+    return ids;
+  }, [visibleStepIds, matchedStepIds]);
+
+  const renderedStepsFiltered = (activeFlow.steps || []).filter(s => effectiveVisibleStepIds.has(s.id));
+  const renderedEdges = (edges || []).filter(e => effectiveVisibleStepIds.has(e.from) && effectiveVisibleStepIds.has(e.to));
+  const branchLabelsByTarget = useMemo(() => {
+    const stepById = new Map((activeFlow.steps || []).map(s => [s.id, s]));
+    const byTarget = new Map();
+
+    renderedEdges.forEach(edge => {
+      const from = stepById.get(edge.from);
+      const label = (edge.label || '').toLowerCase();
+      if (from?.type !== 'condition') return;
+      if (label !== 'then' && label !== 'else') return;
+
+      if (!byTarget.has(edge.to)) byTarget.set(edge.to, new Set());
+      byTarget.get(edge.to).add(label);
+    });
+
+    const out = {};
+    byTarget.forEach((labels, stepId) => {
+      out[stepId] = Array.from(labels).sort((a, b) => (a === 'then' ? -1 : b === 'then' ? 1 : a.localeCompare(b)));
+    });
+    return out;
+  }, [activeFlow.steps, renderedEdges]);
   const selectedStep = selectedId ? findStep(selectedId, activeFlow.steps) : null;
   const contextStep = nodeMenu?.stepId ? findStep(nodeMenu.stepId, activeFlow.steps) : null;
   const startStep = (activeFlow.steps || []).find(s => s.type === 'start') || null;
@@ -815,7 +1184,41 @@ export default function FlowBuilder({ onClose }) {
           <input className="flow-name-input" value={activeFlow.name} placeholder="Flow Name"
             onChange={e => setActiveFlow(f => ({ ...f, name: e.target.value }))} />
         </div>
+        <div className="flow-toolbar-search" onClick={e => e.stopPropagation()}>
+          <input
+            ref={flowSearchRef}
+            className="flow-toolbar-search-input"
+            placeholder="Search flows... ( / )"
+            value={flowQuery}
+            onChange={e => { setFlowQuery(e.target.value); setResultCursor(0); }}
+            onKeyDown={handleFlowSearchKeyDown}
+          />
+          <select className="flow-toolbar-search-select" value={flowSearchMode} onChange={e => setFlowSearchMode(e.target.value)}>
+            <option value="name">Name only</option>
+            <option value="name-meta">Name + metadata</option>
+          </select>
+          <select className="flow-toolbar-search-select" value={flowSortMode} onChange={e => setFlowSortMode(e.target.value)}>
+            <option value="updated-desc">Updated ↓</option>
+            <option value="updated-asc">Updated ↑</option>
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="steps-desc">Most steps</option>
+          </select>
+          <div className="flow-toolbar-search-summary">
+            {visibleFlows.length} shown{debouncedFlowQuery ? ` • ${flows.length} total` : ''}
+          </div>
+        </div>
         <div className="flow-toolbar-btns">
+          <button
+            className="flow-btn"
+            onClick={() => {
+              flowSearchRef.current?.focus();
+              flowSearchRef.current?.select();
+            }}
+            title="Focus flow search"
+          >
+            🔎 Search
+          </button>
           <button className={`flow-btn run-btn${isRunning ? ' stop' : ''}`} onClick={handleRun}>
             {isRunning ? '■ Stop' : '▶ Run'}
           </button>
@@ -883,12 +1286,18 @@ export default function FlowBuilder({ onClose }) {
         <div className="flow-list-panel">
           <div className="flow-list-title">Saved Flows</div>
           {flows.length === 0 && <div className="flow-list-empty">No flows yet</div>}
-          {flows.map(f => (
+          {flows.length > 0 && visibleFlows.length === 0 && (
+            <div className="flow-list-empty">No matching flows. Try a shorter search.</div>
+          )}
+          {visibleFlows.map((f, idx) => (
             <div key={f.id}
-              className={`flow-list-item${activeFlow.id === f.id ? ' active' : ''}`}
+              className={`flow-list-item${activeFlow.id === f.id ? ' active' : ''}${resultCursor === idx ? ' hover' : ''}${f._pinnedActive ? ' pinned' : ''}`}
               onClick={() => selectFlow(f)}>
-              <div className="flow-list-name">{f.name}</div>
-              <div className="flow-list-meta">{(f.steps || []).length} step{(f.steps || []).length !== 1 ? 's' : ''}</div>
+              <div className="flow-list-name">{renderHighlightedName(f.name, debouncedFlowQuery)}</div>
+              <div className="flow-list-meta">
+                {(f.steps || []).length} step{(f.steps || []).length !== 1 ? 's' : ''}
+                {f._pinnedActive ? ' • active (pinned)' : ''}
+              </div>
             </div>
           ))}
         </div>
@@ -910,7 +1319,7 @@ export default function FlowBuilder({ onClose }) {
               borderRadius: 6,
               padding: '4px 8px'
             }}>
-              Compact view: START → {minimizedTargetId ? 'selected node' : 'top node'} + orphan flows (double-click any node)
+              Compact view: START/IF roots + sibling branches + orphan flows (double-click any node)
             </div>
           )}
           {activeFlow.steps.length === 0 && (
@@ -920,6 +1329,13 @@ export default function FlowBuilder({ onClose }) {
               <div style={{ fontSize: 11, marginTop: 8, opacity: 0.5 }}>
                 Drag nodes to position · Pull the <span style={{ color: '#3b82f6' }}>●</span> handle on the right edge to connect steps
               </div>
+            </div>
+          )}
+          {stepFilterQuery && activeFlow.steps.length > 0 && renderedStepsFiltered.length === 0 && (
+            <div className="flow-canvas-empty" style={{ zIndex: 5 }}>
+              <div style={{ fontSize: 26 }}>🔎</div>
+              <div>No matching steps in this flow</div>
+              <div style={{ fontSize: 11, marginTop: 6, opacity: 0.65 }}>Try another keyword or clear search</div>
             </div>
           )}
 
@@ -966,10 +1382,33 @@ export default function FlowBuilder({ onClose }) {
                       markerEnd={`url(#${mark})`} />
                     {/* Branch label */}
                     {edge.label && (
-                      <text x={mx} y={my - 7} textAnchor="middle" fontSize={9} fontWeight={700}
-                        fill={stroke} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                        {edge.label.toUpperCase()}
-                      </text>
+                      <g style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                        {isFlowMinimized && (edge.label === 'then' || edge.label === 'else') && (
+                          <rect
+                            x={mx - 24}
+                            y={my - 17}
+                            width={48}
+                            height={14}
+                            rx={7}
+                            fill={edge.label === 'then' ? 'rgba(22,163,74,0.18)' : 'rgba(220,38,38,0.18)'}
+                            stroke={stroke}
+                            strokeWidth={1}
+                          />
+                        )}
+                        <text
+                          x={mx}
+                          y={my - 7}
+                          textAnchor="middle"
+                          className={[
+                            'flow-edge-label',
+                            edge.label === 'then' ? 'flow-edge-label-then' : '',
+                            edge.label === 'else' ? 'flow-edge-label-else' : '',
+                            isFlowMinimized && (edge.label === 'then' || edge.label === 'else') ? 'flow-edge-label-compact' : '',
+                          ].filter(Boolean).join(' ')}
+                        >
+                          {edge.label.toUpperCase()}
+                        </text>
+                      </g>
                     )}
                     {/* Delete button when selected */}
                     {isSel && (
@@ -993,7 +1432,7 @@ export default function FlowBuilder({ onClose }) {
             </svg>
 
             {/* All step nodes (including START and END) */}
-            {renderedSteps.map(step => (
+            {renderedStepsFiltered.map(step => (
               <StepNode
                 key={step.id}
                 step={step}
@@ -1007,6 +1446,7 @@ export default function FlowBuilder({ onClose }) {
                 onDoubleClickNode={minimizeToNode}
                 onContextMenuNode={openNodeContextMenu}
                 isTarget={!!connLine && connTarget === step.id && connTarget !== connectFromRef.current?.fromId}
+                branchLabels={isFlowMinimized ? (branchLabelsByTarget[step.id] || []) : []}
               />
             ))}
 

@@ -1289,6 +1289,43 @@ html.dark .toast-error {
 }
 .flow-toolbar-btns { display: flex; gap: 5px; flex-shrink: 0; }
 
+.flow-toolbar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 320px;
+  max-width: 740px;
+}
+.flow-toolbar-search-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.flow-toolbar-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.flow-toolbar-search-select {
+  padding: 5px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+.flow-toolbar-search-summary {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .flow-btn {
   padding: 6px 12px;
   border: 1px solid var(--border-color);
@@ -1347,6 +1384,45 @@ html.dark .toast-error {
   text-transform: uppercase; color: var(--text-secondary);
   padding: 4px 12px 8px;
 }
+.flow-list-controls {
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+.flow-list-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.flow-list-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.flow-list-control-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.flow-list-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+.flow-list-summary {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
 .flow-list-empty { font-size: 12px; color: var(--text-secondary); padding: 6px 12px; opacity: 0.7; }
 .flow-list-item {
   padding: 8px 12px; cursor: pointer;
@@ -1354,9 +1430,17 @@ html.dark .toast-error {
   transition: all 0.12s;
 }
 .flow-list-item:hover { background: var(--bg-tertiary); }
+.flow-list-item.hover { background: var(--bg-tertiary); }
 .flow-list-item.active { border-left-color: var(--primary-color); background: var(--bg-tertiary); }
+.flow-list-item.pinned { border-left-color: #0ea5e9; }
 .flow-list-name { font-size: 12px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flow-list-meta { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+.flow-list-hl {
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
 
 /* Flow canvas */
 .flow-canvas {
@@ -1931,6 +2015,52 @@ html.dark .toast-error {
 
 /* Right status icon */
 .fn-status { display: flex; align-items: center; justify-content: center; padding: 0 7px 0 4px; flex-shrink: 0; font-size: 14px; }
+
+/* Compact-mode condition branch markers on target nodes */
+.fn-branch-badges {
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 35;
+  pointer-events: none;
+}
+.fn-branch-pill {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 2px 8px rgba(2, 6, 23, 0.35);
+}
+.fn-branch-then {
+  color: #dcfce7;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.85), rgba(21, 128, 61, 0.95));
+  border-color: rgba(134, 239, 172, 0.55);
+}
+.fn-branch-else {
+  color: #ffe4e6;
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.85), rgba(185, 28, 28, 0.95));
+  border-color: rgba(251, 113, 133, 0.55);
+}
+
+/* Edge label emphasis in compact mode */
+.flow-edge-label {
+  font-size: 9px;
+  font-weight: 700;
+  fill: #94a3b8;
+}
+.flow-edge-label-then { fill: #16a34a; }
+.flow-edge-label-else { fill: #dc2626; }
+.flow-edge-label-compact {
+  font-size: 10px;
+  font-weight: 800;
+}
 
 /* Delete button (shows on hover, top-right corner) */
 .node-del-btn {
