@@ -74,15 +74,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path build/bin/artemis.exe -DestinationPath dist/${{ matrix.artifact_name }}.zip -Force
+          New-Item -ItemType Directory -Path dist\${{ matrix.artifact_name }}\frontend -Force | Out-Null
+          Copy-Item build/bin/artemis.exe dist/${{ matrix.artifact_name }}/artemis.exe -Force
+          Copy-Item -Recurse frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist -Force
+          Compress-Archive -Path dist/${{ matrix.artifact_name }}/* -DestinationPath dist/${{ matrix.artifact_name }}.zip -Force
 
       - name: Package Linux artifact
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          mkdir -p dist
-          tar -czf dist/${{ matrix.artifact_name }}.tar.gz -C build/bin artemis
+          mkdir -p dist/${{ matrix.artifact_name }}/frontend
+          cp build/bin/artemis dist/${{ matrix.artifact_name }}/artemis
+          cp -r frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist
+          tar -czf dist/${{ matrix.artifact_name }}.tar.gz -C dist ${{ matrix.artifact_name }}
 
       - name: Package Linux AppImage artifact
         if: runner.os == 'Linux'
@@ -122,8 +126,10 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          mkdir -p dist
-          ditto -c -k build/bin/artemis dist/${{ matrix.artifact_name }}.zip
+          mkdir -p dist/${{ matrix.artifact_name }}/frontend
+          cp build/bin/artemis dist/${{ matrix.artifact_name }}/artemis
+          cp -R frontend/dist dist/${{ matrix.artifact_name }}/frontend/dist
+          ditto -c -k dist/${{ matrix.artifact_name }} dist/${{ matrix.artifact_name }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -376,12 +377,46 @@ func (s *HTTPServer) handleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {
 	s.handleCORS(w, r)
-	// Serve frontend files
-	file := "./frontend/dist" + r.URL.Path
-	if file == "./frontend/dist/" || file == "./frontend/dist" {
-		file = "./frontend/dist/index.html"
+	base, ok := findFrontendDistDir()
+	if !ok {
+		http.Error(w, "frontend assets not found (expected frontend/dist)", http.StatusInternalServerError)
+		return
 	}
-	http.ServeFile(w, r, file)
+
+	reqPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
+	if reqPath == "." || reqPath == "" {
+		reqPath = "index.html"
+	}
+
+	assetPath := filepath.Join(base, reqPath)
+	if st, err := os.Stat(assetPath); err == nil && !st.IsDir() {
+		http.ServeFile(w, r, assetPath)
+		return
+	}
+
+	// SPA fallback
+	http.ServeFile(w, r, filepath.Join(base, "index.html"))
+}
+
+func findFrontendDistDir() (string, bool) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	exeDir := filepath.Dir(exePath)
+
+	candidates := []string{
+		filepath.Join(exeDir, "frontend", "dist"),
+		filepath.Join(exeDir, "dist"),
+		filepath.Join(".", "frontend", "dist"),
+	}
+
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && st.IsDir() {
+			return c, true
+		}
+	}
+	return "", false
 }
 
 func (s *HTTPServer) ListenAndServe(addr string) error {
