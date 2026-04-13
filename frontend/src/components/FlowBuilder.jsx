@@ -685,6 +685,15 @@ export default function FlowBuilder({ onClose }) {
         ? await api.flows.update(payload)
         : await api.flows.create(payload);
       setActiveFlow(JSON.parse(JSON.stringify(saved)));
+      
+      // Export the flow to a JSON file
+      try {
+        await api.flows.export(saved.id);
+      } catch (exportErr) {
+        console.warn('Flow export to file failed:', exportErr.message);
+        // Don't fail the save if export fails, just log a warning
+      }
+      
       await loadFlows();
       showToast('Flow saved ✓', 'success');
     } catch (e) { showToast(`Save failed: ${e.message}`, 'error'); }

@@ -16,6 +16,7 @@ type Request struct {
 	Timeout                 int               `json:"timeout"`     // in seconds
 	HTTPVersion             string            `json:"httpVersion"` // Auto, HTTP/1.1, HTTP/2, HTTP/3
 	VerifySSL               bool              `json:"verifySSL"`
+	EnableSSLKeyLog         bool              `json:"enableSSLKeyLog"`
 	FollowRedirects         bool              `json:"followRedirects"`
 	FollowOriginalMethod    bool              `json:"followOriginalMethod"`
 	FollowAuthHeader        bool              `json:"followAuthHeader"`
@@ -28,6 +29,9 @@ type Request struct {
 	DisabledTLSProtocols    []string          `json:"disabledTLSProtocols"` // TLSv1.2, TLSv1.3, etc
 	CipherSuites            []string          `json:"cipherSuites"`         // custom cipher suite order
 	LogLevel                string            `json:"logLevel"`             // error, info, debug, trace
+	CertificateFile         string            `json:"certificateFile"`      // Client certificate file path (PEM/CER/PKCS#12)
+	KeyFile                 string            `json:"keyFile"`              // Client key file path (PEM/PKCS#8)
+	JksFile                 string            `json:"jksFile"`              // Java KeyStore file path
 }
 
 // Auth represents authentication settings

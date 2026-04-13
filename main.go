@@ -65,6 +65,7 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("GET /api/flows/{id}", s.handleGetFlow)
 	s.router.HandleFunc("PUT /api/flows/{id}", s.handleUpdateFlow)
 	s.router.HandleFunc("DELETE /api/flows/{id}", s.handleDeleteFlow)
+	s.router.HandleFunc("POST /api/flows/{id}/export", s.handleExportFlowToFile)
 
 	// Request execution endpoint
 	s.router.HandleFunc("POST /api/request/execute", s.handleExecuteRequest)
@@ -373,6 +374,23 @@ func (s *HTTPServer) handleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *HTTPServer) handleExportFlowToFile(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	flow, err := s.app.GetFlow(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	filePath, err := s.app.SaveFlowToFile(flow)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"filePath": filePath})
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

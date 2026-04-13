@@ -247,6 +247,19 @@ const api = {
         throw new Error(`Failed to delete flow: ${err.message}`);
       }
     },
+
+    export: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/flows/${id}/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to export flow: ${err.message}`);
+      }
+    },
   },
 };
 

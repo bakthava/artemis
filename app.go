@@ -5,7 +5,11 @@ import (
 	"artemis/internal/models"
 	"artemis/internal/services"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -167,6 +171,53 @@ func (a *App) UpdateFlow(flow *models.Flow) (*models.Flow, error) {
 
 func (a *App) DeleteFlow(id string) error {
 	return a.flowRepository.Delete(id)
+}
+
+// SaveFlowToFile saves the flow as a JSON file in the flows directory next to the executable
+func (a *App) SaveFlowToFile(flow *models.Flow) (string, error) {
+	// Get the executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Get the directory containing the executable
+	exeDir := filepath.Dir(exePath)
+
+	// Create flows directory if it doesn't exist
+	flowsDir := filepath.Join(exeDir, "flows")
+	if err := os.MkdirAll(flowsDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create flows directory: %w", err)
+	}
+
+	// Create a safe filename from the flow name
+	filename := flow.Name
+	// Remove or replace invalid filename characters
+	for _, r := range `<>:"/\|?*` {
+		filename = filepath.FromSlash(string(r))
+		if string(r) != "/" {
+			filename = strings.ReplaceAll(flow.Name, string(r), "_")
+		}
+	}
+	if filename == "" {
+		filename = flow.ID
+	}
+
+	// Create the full file path
+	filePath := filepath.Join(flowsDir, filename+".json")
+
+	// Marshal the flow to JSON with pretty printing
+	jsonData, err := json.MarshalIndent(flow, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal flow to JSON: %w", err)
+	}
+
+	// Write the file
+	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
+		return "", fmt.Errorf("failed to write flow file: %w", err)
+	}
+
+	return filePath, nil
 }
 
 // Config method

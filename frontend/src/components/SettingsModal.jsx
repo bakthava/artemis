@@ -96,7 +96,16 @@ function SettingsModal({ isOpen, onClose }) {
     showToast(`Certificate exported as ${format.toUpperCase()}`, 'success');
   };
 
-  const handleUploadCertificate = (e) => {
+  const readFileAsBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]); // Get base64 part
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleUploadCertificate = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -109,20 +118,25 @@ function SettingsModal({ isOpen, onClose }) {
       return;
     }
 
-    setCertFileName(file.name);
-    setRequest({ ...request, certificateFile: file });
-    showToast(`Certificate file imported: ${file.name}`, 'success');
+    try {
+      const base64Content = await readFileAsBase64(file);
+      setCertFileName(file.name);
+      setRequest({ ...request, certificateFile: base64Content });
+      showToast(`Certificate file imported: ${file.name}`, 'success');
 
-    // Check if key is also uploaded
-    if (request.keyFile) {
-      showToast('✓ Both certificate and key files are now imported', 'info');
+      // Check if key is also uploaded
+      if (request.keyFile) {
+        showToast('✓ Both certificate and key files are now imported', 'info');
+      }
+    } catch (err) {
+      showToast(`Error reading certificate file: ${err.message}`, 'error');
     }
 
     // Reset input
     e.target.value = '';
   };
 
-  const handleUploadKey = (e) => {
+  const handleUploadKey = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -135,13 +149,18 @@ function SettingsModal({ isOpen, onClose }) {
       return;
     }
 
-    setKeyFileName(file.name);
-    setRequest({ ...request, keyFile: file });
-    showToast(`Key file imported: ${file.name}`, 'success');
+    try {
+      const base64Content = await readFileAsBase64(file);
+      setKeyFileName(file.name);
+      setRequest({ ...request, keyFile: base64Content });
+      showToast(`Key file imported: ${file.name}`, 'success');
 
-    // Check if certificate is also uploaded
-    if (request.certificateFile) {
-      showToast('✓ Both certificate and key files are now imported', 'info');
+      // Check if certificate is also uploaded
+      if (request.certificateFile) {
+        showToast('✓ Both certificate and key files are now imported', 'info');
+      }
+    } catch (err) {
+      showToast(`Error reading key file: ${err.message}`, 'error');
     }
 
     // Reset input
@@ -160,7 +179,7 @@ function SettingsModal({ isOpen, onClose }) {
     showToast('Key file cleared', 'info');
   };
 
-  const handleUploadJKS = (e) => {
+  const handleUploadJKS = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -169,10 +188,15 @@ function SettingsModal({ isOpen, onClose }) {
       return;
     }
 
-    setJksFileName(file.name);
-    setRequest({ ...request, jksFile: file });
-    showToast(`JKS Keystore imported: ${file.name}`, 'success');
-    showToast('✓ JKS Keystore contains both certificate and private key', 'info');
+    try {
+      const base64Content = await readFileAsBase64(file);
+      setJksFileName(file.name);
+      setRequest({ ...request, jksFile: base64Content });
+      showToast(`JKS Keystore imported: ${file.name}`, 'success');
+      showToast('✓ JKS Keystore contains both certificate and private key', 'info');
+    } catch (err) {
+      showToast(`Error reading JKS file: ${err.message}`, 'error');
+    }
 
     // Reset input
     e.target.value = '';
