@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"google.golang.org/protobuf/proto"
 	descriptorpb "google.golang.org/protobuf/types/descriptorpb"
 )
 

@@ -4,48 +4,83 @@ import { useToast } from '../context/ToastContext';
 import api from '../services/api';
 
 function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onRequestComplete }) {
-  const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest } = useRequest();
+  const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest, setRequestType, setGRPCConfig } = useRequest();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('params');
 
   const handleSend = async () => {
-    if (!request.url.trim()) {
-      showToast('Please enter a URL', 'warning');
-      return;
+    // Check required fields based on request type
+    if (request.requestType === 'GRPC') {
+      if (!request.url.trim()) {
+        showToast('Please enter gRPC server address', 'warning');
+        return;
+      }
+      if (!request.grpcConfig.service) {
+        showToast('Please select a gRPC service', 'warning');
+        return;
+      }
+      if (!request.grpcConfig.method) {
+        showToast('Please select a gRPC method', 'warning');
+        return;
+      }
+    } else {
+      if (!request.url.trim()) {
+        showToast('Please enter a URL', 'warning');
+        return;
+      }
     }
 
     setLoading(true);
     try {
-      const response = await api.request.execute({
-        method: request.method,
-        url: request.url,
-        headers: request.headers,
-        queryParams: request.params,
-        body: request.body,
-        bodyType: request.bodyType,
-        auth: request.auth,
-        timeout: request.timeout,
-        httpVersion: request.httpVersion,
-        maxResponseSize: request.maxResponseSize,
-        verifySSL: request.verifySSL,
-        enableSSLKeyLog: request.enableSSLKeyLog,
-        followRedirects: request.followRedirects,
-        followOriginalMethod: request.followOriginalMethod,
-        followAuthHeader: request.followAuthHeader,
-        removeRefererOnRedirect: request.removeRefererOnRedirect,
-        strictHTTPParser: request.strictHTTPParser,
-        encodeURLAutomatically: request.encodeURLAutomatically,
-        disableCookieJar: request.disableCookieJar,
-        useServerCipherSuite: request.useServerCipherSuite,
-        maxRedirects: request.maxRedirects,
-        disabledTLSProtocols: request.disabledTLSProtocols,
-        cipherSuites: request.cipherSuites,
-        logLevel: request.logLevel,
-      });
+      let response;
+      if (request.requestType === 'GRPC') {
+        // gRPC request
+        response = await api.request.executeGRPC({
+          url: request.url,
+          service: request.grpcConfig.service,
+          method: request.grpcConfig.method,
+          protoPath: request.grpcConfig.protoPath,
+          messageFormat: request.grpcConfig.messageFormat,
+          metadata: request.grpcConfig.metadata,
+          body: request.body,
+          callType: request.grpcConfig.callType,
+          timeout: request.timeout,
+          certificateFile: request.grpcConfig.certificateFile,
+          keyFile: request.grpcConfig.keyFile,
+          caCertFile: request.grpcConfig.caCertFile,
+        });
+      } else {
+        // HTTP request
+        response = await api.request.execute({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          queryParams: request.params,
+          body: request.body,
+          bodyType: request.bodyType,
+          auth: request.auth,
+          timeout: request.timeout,
+          httpVersion: request.httpVersion,
+          maxResponseSize: request.maxResponseSize,
+          verifySSL: request.verifySSL,
+          enableSSLKeyLog: request.enableSSLKeyLog,
+          followRedirects: request.followRedirects,
+          followOriginalMethod: request.followOriginalMethod,
+          followAuthHeader: request.followAuthHeader,
+          removeRefererOnRedirect: request.removeRefererOnRedirect,
+          strictHTTPParser: request.strictHTTPParser,
+          encodeURLAutomatically: request.encodeURLAutomatically,
+          disableCookieJar: request.disableCookieJar,
+          useServerCipherSuite: request.useServerCipherSuite,
+          maxRedirects: request.maxRedirects,
+          disabledTLSProtocols: request.disabledTLSProtocols,
+          cipherSuites: request.cipherSuites,
+          logLevel: request.logLevel,
+        });
+      }
       
       showToast('Request completed successfully', 'success');
       onResponse(response);
-      // Refresh sidebar to show updated history
       onRequestComplete?.();
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
@@ -75,7 +110,6 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
           logs: [`[ERROR] ${err.message}`],
         });
       }
-      // Still refresh even on error to update history
       onRequestComplete?.();
     } finally {
       setLoading(false);
@@ -140,40 +174,77 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
 
   return (
     <div className="request-builder">
+      {/* Request Type Selector */}
+      <div style={{ marginTop: '15px', marginBottom: '12px', padding: '0 5px' }}>
+        <label style={{ fontWeight: 'bold', marginRight: '8px', display: 'inline-block' }}>Request Type:</label>
+        <select
+          value={request.requestType || 'HTTP'}
+          onChange={(e) => setRequestType(e.target.value)}
+          style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
+        >
+          <option value="HTTP">HTTP</option>
+          <option value="GRPC">gRPC</option>
+        </select>
+      </div>
+
       {/* URL Bar */}
       <div className="url-bar">
-        <select
-          className="method-select"
-          value={request.method}
-          onChange={(e) => setMethod(e.target.value)}
-        >
-          <option>GET</option>
-          <option>POST</option>
-          <option>PUT</option>
-          <option>PATCH</option>
-          <option>DELETE</option>
-          <option>HEAD</option>
-          <option>OPTIONS</option>
-        </select>
-        <input
-          ref={urlInputRef}
-          type="text"
-          className="url-input"
-          placeholder="https://example.com/api/endpoint"
-          value={request.url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <select
-          className="protocol-select"
-          value={request.httpVersion || 'Auto'}
-          onChange={(e) => setRequest({ ...request, httpVersion: e.target.value })}
-          title="HTTP protocol version"
-        >
-          <option value="Auto">Auto</option>
-          <option value="HTTP/1.1">HTTP/1.x</option>
-          <option value="HTTP/2">HTTP/2</option>
-          <option value="HTTP/3">HTTP/3</option>
-        </select>
+        {request.requestType === 'GRPC' ? (
+          <>
+            <input
+              type="text"
+              className="url-input"
+              placeholder="localhost:50051"
+              value={request.url}
+              onChange={(e) => setUrl(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <select
+              value={request.grpcConfig?.messageFormat || 'JSON'}
+              onChange={(e) => setGRPCConfig({ messageFormat: e.target.value })}
+              title="Message format"
+              style={{ padding: '6px', borderRadius: '4px' }}
+            >
+              <option value="JSON">JSON</option>
+              <option value="BINARY">Binary</option>
+            </select>
+          </>
+        ) : (
+          <>
+            <select
+              className="method-select"
+              value={request.method}
+              onChange={(e) => setMethod(e.target.value)}
+            >
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+              <option>HEAD</option>
+              <option>OPTIONS</option>
+            </select>
+            <input
+              ref={urlInputRef}
+              type="text"
+              className="url-input"
+              placeholder="https://example.com/api/endpoint"
+              value={request.url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <select
+              className="protocol-select"
+              value={request.httpVersion || 'Auto'}
+              onChange={(e) => setRequest({ ...request, httpVersion: e.target.value })}
+              title="HTTP protocol version"
+            >
+              <option value="Auto">Auto</option>
+              <option value="HTTP/1.1">HTTP/1.x</option>
+              <option value="HTTP/2">HTTP/2</option>
+              <option value="HTTP/3">HTTP/3</option>
+            </select>
+          </>
+        )}
         <button
           className="send-button"
           onClick={handleSend}
@@ -186,36 +257,158 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
 
       {/* Tabs */}
       <div className="tabs">
-        <button
-          className={`tab-button ${activeTab === 'params' ? 'active' : ''}`}
-          onClick={() => setActiveTab('params')}
-        >
-          Params
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'headers' ? 'active' : ''}`}
-          onClick={() => setActiveTab('headers')}
-        >
-          Headers
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'body' ? 'active' : ''}`}
-          onClick={() => setActiveTab('body')}
-        >
-          Body
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'auth' ? 'active' : ''}`}
-          onClick={() => setActiveTab('auth')}
-        >
-          Auth
-        </button>
+        {request.requestType === 'GRPC' ? (
+          <>
+            <button
+              className={`tab-button ${activeTab === 'grpc-config' ? 'active' : ''}`}
+              onClick={() => setActiveTab('grpc-config')}
+            >
+              gRPC Config
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'metadata' ? 'active' : ''}`}
+              onClick={() => setActiveTab('metadata')}
+            >
+              Metadata
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'body' ? 'active' : ''}`}
+              onClick={() => setActiveTab('body')}
+            >
+              Body
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className={`tab-button ${activeTab === 'params' ? 'active' : ''}`}
+              onClick={() => setActiveTab('params')}
+            >
+              Params
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'headers' ? 'active' : ''}`}
+              onClick={() => setActiveTab('headers')}
+            >
+              Headers
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'body' ? 'active' : ''}`}
+              onClick={() => setActiveTab('body')}
+            >
+              Body
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'auth' ? 'active' : ''}`}
+              onClick={() => setActiveTab('auth')}
+            >
+              Auth
+            </button>
+          </>
+        )}
       </div>
 
       {/* Tab Content */}
       <div className="tab-content">
-        {/* Params Tab */}
-        {activeTab === 'params' && (
+        {/* gRPC Config Tab */}
+        {request.requestType === 'GRPC' && activeTab === 'grpc-config' && (
+          <div>
+            <h4>gRPC Configuration</h4>
+            <div className="form-group">
+              <label className="form-label">Service</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g., artemistest.Greeter"
+                value={request.grpcConfig?.service || ''}
+                onChange={(e) => setGRPCConfig({ service: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Method</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g., SayHello"
+                value={request.grpcConfig?.method || ''}
+                onChange={(e) => setGRPCConfig({ method: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Call Type</label>
+              <select
+                className="form-input"
+                value={request.grpcConfig?.callType || 'unary'}
+                onChange={(e) => setGRPCConfig({ callType: e.target.value })}
+              >
+                <option value="unary">Unary</option>
+                <option value="server_stream">Server Streaming</option>
+                <option value="client_stream">Client Streaming</option>
+                <option value="bidirectional_stream">Bidirectional</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Proto File Path</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="/path/to/proto/file.proto"
+                value={request.grpcConfig?.protoPath || ''}
+                onChange={(e) => setGRPCConfig({ protoPath: e.target.value })}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* gRPC Metadata Tab */}
+        {request.requestType === 'GRPC' && activeTab === 'metadata' && (
+          <div>
+            <h4>gRPC Metadata</h4>
+            {Object.entries(request.grpcConfig?.metadata || {}).map(([key, value], index) => (
+              <div key={index} className="key-value-row">
+                <input
+                  type="text"
+                  placeholder="Key"
+                  value={key}
+                  onChange={(e) => {
+                    const newMetadata = { ...request.grpcConfig.metadata };
+                    delete newMetadata[key];
+                    newMetadata[e.target.value] = value;
+                    setGRPCConfig({ metadata: newMetadata });
+                  }}
+                  className="form-input"
+                />
+                <input
+                  type="text"
+                  placeholder="Value"
+                  value={value}
+                  onChange={(e) => {
+                    const newMetadata = { ...request.grpcConfig.metadata, [key]: e.target.value };
+                    setGRPCConfig({ metadata: newMetadata });
+                  }}
+                  className="form-input"
+                />
+                <button
+                  onClick={() => {
+                    const newMetadata = { ...request.grpcConfig.metadata };
+                    delete newMetadata[key];
+                    setGRPCConfig({ metadata: newMetadata });
+                  }}
+                  title="Delete metadata"
+                >✕</button>
+              </div>
+            ))}
+            <button
+              className="add-row-button"
+              onClick={() => setGRPCConfig({ metadata: { ...request.grpcConfig?.metadata, '': '' } })}
+            >
+              + Add Metadata
+            </button>
+          </div>
+        )}
+
+        {/* Params Tab (HTTP only) */}
+        {request.requestType !== 'GRPC' && activeTab === 'params' && (
           <div>
             <h4>Query Parameters</h4>
             {Object.entries(request.params).map(([key, value], index) => (
@@ -249,8 +442,8 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
           </div>
         )}
 
-        {/* Headers Tab */}
-        {activeTab === 'headers' && (
+        {/* Headers Tab (HTTP only) */}
+        {request.requestType !== 'GRPC' && activeTab === 'headers' && (
           <div>
             <h4>Headers</h4>
             {Object.entries(request.headers).map(([key, value], index) => (

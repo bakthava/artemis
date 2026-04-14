@@ -119,8 +119,9 @@ export function runAssertions(assertions, response) {
  * @param {function} onUpdate  - callback(stepId, { status, result, error, variables })
  * @param {function} onMetrics - callback(stepName, { responseTime, statusCode, bytesRecv, bytesSent })
  * @param {AbortSignal} signal - optional cancellation signal
+ * @param {object}   settings - global request settings (SSL, redirects, etc.) to merge into each HTTP step
  */
-export async function runFlow(flow, onUpdate, onMetrics, signal) {
+export async function runFlow(flow, onUpdate, onMetrics, signal, settings = {}) {
   // Mutable variable map shared across all steps
   const variables = { ...(flow.variables || {}) };
 
@@ -149,7 +150,7 @@ export async function runFlow(flow, onUpdate, onMetrics, signal) {
 
         // ── HTTP Request ──────────────────────────────────────────────────
         case 'request': {
-          const req = substituteRequest(step.request, variables);
+          const req = { ...settings, ...substituteRequest(step.request, variables) };
           log('info', `→ ${req.method} ${req.url}`);
           const reqStart = performance.now();
           const response = await api.request.execute(req);

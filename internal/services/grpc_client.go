@@ -2,7 +2,6 @@ package services
 
 import (
 	"artemis/internal/models"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -11,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,7 +19,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { useRequest } from '../context/RequestContext';
 import { runFlow } from '../utils/flowRunner';
 import FlowStepEditor from './FlowStepEditor';
 import MetricsTable from './MetricsTable';
@@ -458,6 +459,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
 // ── FlowBuilder ───────────────────────────────────────────────────────────────
 export default function FlowBuilder({ onClose }) {
   const { showToast } = useToast();
+  const { request } = useRequest();
   const canvasWrapRef = useRef(null);
 
   const [flows,        setFlows]        = useState([]);
@@ -897,6 +899,27 @@ export default function FlowBuilder({ onClose }) {
       const startStep = (activeFlow.steps || []).find(s => s.type === 'start');
       const isPerformance = startStep?.mode === 'performance';
 
+      // Collect global SSL/request settings to inject into every flow HTTP step
+      const reqSettings = {
+        verifySSL: request.verifySSL,
+        enableSSLKeyLog: request.enableSSLKeyLog,
+        followRedirects: request.followRedirects,
+        followOriginalMethod: request.followOriginalMethod,
+        followAuthHeader: request.followAuthHeader,
+        removeRefererOnRedirect: request.removeRefererOnRedirect,
+        strictHTTPParser: request.strictHTTPParser,
+        encodeURLAutomatically: request.encodeURLAutomatically,
+        disableCookieJar: request.disableCookieJar,
+        useServerCipherSuite: request.useServerCipherSuite,
+        maxRedirects: request.maxRedirects,
+        disabledTLSProtocols: request.disabledTLSProtocols,
+        cipherSuites: request.cipherSuites,
+        timeout: request.timeout,
+        httpVersion: request.httpVersion,
+        maxResponseSize: request.maxResponseSize,
+        logLevel: request.logLevel,
+      };
+
       const onUpdatePrimary = (stepId, update) => {
         if (typeof update === 'function') {
           setStepStatuses(prev => ({ ...prev, [stepId]: update(prev[stepId]) }));
@@ -907,7 +930,7 @@ export default function FlowBuilder({ onClose }) {
       };
 
       if (!isPerformance) {
-        await runFlow(activeFlow, onUpdatePrimary, onMetrics, ctrl.signal);
+        await runFlow(activeFlow, onUpdatePrimary, onMetrics, ctrl.signal, reqSettings);
         showToast('Flow completed ✓', 'success');
         return;
       }
@@ -934,7 +957,7 @@ export default function FlowBuilder({ onClose }) {
           for (let i = 0; i < transactionsCount; i++) {
             if (ctrl.signal.aborted) throw new Error('Aborted');
             try {
-              await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal);
+              await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal, reqSettings);
             } catch (err) {
               if (err.message === 'Aborted') throw err;
               // In load mode continue remaining iterations even if a single flow run fails
@@ -945,7 +968,7 @@ export default function FlowBuilder({ onClose }) {
 
         while (!ctrl.signal.aborted && Date.now() < testEndTs) {
           try {
-            await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal);
+            await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal, reqSettings);
           } catch (err) {
             if (err.message === 'Aborted') throw err;
             // Keep generating load during duration window despite per-run failures

@@ -108,11 +108,15 @@ func (a *App) ExecuteRequest(req *models.Request) (*models.Response, error) {
 				Timestamp:      time.Now().Unix(),
 			}
 		}
-		_ = a.historyRepository.Add(req, response)
+		if a.historyRepository != nil {
+			_ = a.historyRepository.Add(req, response)
+		}
 		return response, err
 	}
 	// Add to history
-	_ = a.historyRepository.Add(req, response)
+	if a.historyRepository != nil {
+		_ = a.historyRepository.Add(req, response)
+	}
 	return response, nil
 }
 
@@ -265,7 +269,12 @@ func (a *App) GetAvailableGRPCServices() (map[string][]*models.ProtoMethod, erro
 					if protoFile.PackageName != "" {
 						fullName = protoFile.PackageName + "." + svc.Name
 					}
-					services[fullName] = &svc.Methods
+					// Convert []ProtoMethod to []*ProtoMethod
+					methods := make([]*models.ProtoMethod, len(svc.Methods))
+					for i := range svc.Methods {
+						methods[i] = &svc.Methods[i]
+					}
+					services[fullName] = methods
 				}
 			}
 		}

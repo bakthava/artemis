@@ -154,7 +154,7 @@ function ResponseViewer({ response, loading }) {
         {activeTab === 'body' && (
           <div className="response-body">
             {response.body ? (
-              <pre>{formatJSON(response.body)}</pre>
+              <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}>{formatJSON(response.body)}</pre>
             ) : (
               <div style={{ color: 'var(--text-secondary)' }}>No response body</div>
             )}

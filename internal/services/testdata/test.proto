@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package test;
+
+option go_package = "artemis/internal/services/testproto";
+
+// Test service for gRPC testing
+service TestService {
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+  rpc ServerStream (StreamRequest) returns (stream StreamReply) {}
+  rpc ClientStream (stream ClientStreamRequest) returns (ClientStreamReply) {}
+  rpc BidirectionalStream (stream BidiMessage) returns (stream BidiMessage) {}
+}
+
+message HelloRequest {
+  string name = 1;
+  int32 count = 2;
+}
+
+message HelloReply {
+  string message = 1;
+  string timestamp = 2;
+}
+
+message StreamRequest {
+  string prefix = 1;
+  int32 count = 2;
+}
+
+message StreamReply {
+  string message = 1;
+  int32 index = 2;
+}
+
+message ClientStreamRequest {
+  string data = 1;
+}
+
+message ClientStreamReply {
+  string result = 1;
+  int32 total_received = 2;
+}
+
+message BidiMessage {
+  string text = 1;
+  int32 sequence = 2;
+}

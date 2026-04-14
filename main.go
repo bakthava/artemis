@@ -37,9 +37,6 @@ func NewHTTPServer(app *App) *HTTPServer {
 
 // setupRoutes configures all HTTP endpoints
 func (s *HTTPServer) setupRoutes() {
-	// Middleware chain
-	h := http.HandlerFunc(s.handleCORS)
-
 	// Collections endpoints
 	s.router.HandleFunc("POST /api/collections", s.handleCreateCollection)
 	s.router.HandleFunc("GET /api/collections", s.handleGetCollections)
@@ -69,10 +66,10 @@ func (s *HTTPServer) setupRoutes() {
 
 	// Request execution endpoint
 	s.router.HandleFunc("POST /api/request/execute", s.handleExecuteRequest)
+	s.router.HandleFunc("OPTIONS /api/request/execute", s.handleCORSOptions)
 
 	// Serve frontend (SPA fallback to index.html)
 	s.router.HandleFunc("/", s.handleStatic)
-	_ = h
 }
 
 func (s *HTTPServer) handleCORS(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +80,13 @@ func (s *HTTPServer) handleCORS(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+}
+
+func (s *HTTPServer) handleCORSOptions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *HTTPServer) handleCreateCollection(w http.ResponseWriter, r *http.Request) {

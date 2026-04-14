@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package main;
+
+option go_package = "artemis/mock-grpc-server";
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+  rpc SayHelloStream (HelloRequest) returns (stream HelloReply) {}
+  rpc ClientStreamHello (stream HelloRequest) returns (HelloReply) {}
+  rpc BidirectionalStream (stream HelloRequest) returns (stream HelloReply) {}
+}
+
+service Streamer {
+  rpc ListItems (ListRequest) returns (stream Item) {}
+}
+
+service Uploader {
+  rpc Upload (stream Chunk) returns (UploadResponse) {}
+}
+
+service Echo {
+  rpc EchoBidirectional (stream EchoRequest) returns (stream EchoResponse) {}
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+
+message ListRequest {
+  int32 count = 1;
+}
+
+message Item {
+  int32 id = 1;
+  string name = 2;
+}
+
+message Chunk {
+  string data = 1;
+}
+
+message UploadResponse {
+  int32 chunks_received = 1;
+  string status = 2;
+}
+
+message EchoRequest {
+  string text = 1;
+}
+
+message EchoResponse {
+  string text = 1;
+  int32 sequence = 2;
+}

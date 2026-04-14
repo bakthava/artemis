@@ -604,6 +604,11 @@ func (hc *HTTPClient) buildRequest(req *models.Request) (*http.Request, error) {
 		httpReq.Header.Set(key, value)
 	}
 
+	// Set default User-Agent if not provided
+	if httpReq.Header.Get("User-Agent") == "" {
+		httpReq.Header.Set("User-Agent", "Artemis/1.0")
+	}
+
 	// Add authentication
 	if req.Auth != nil {
 		hc.addAuth(httpReq, req.Auth)
