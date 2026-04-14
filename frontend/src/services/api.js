@@ -261,6 +261,77 @@ const api = {
       }
     },
   },
+
+  grpc: {
+    getAvailableServices: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/services`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        console.error('Failed to get gRPC services:', err);
+        return {};
+      }
+    },
+
+    uploadProtoFile: async (filename, content) => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/proto`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename, content }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to upload proto file: ${err.message}`);
+      }
+    },
+
+    listProtoFiles: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/proto`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        console.error('Failed to list proto files:', err);
+        return [];
+      }
+    },
+
+    deleteProtoFile: async (filename) => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/proto/${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to delete proto file: ${err.message}`);
+      }
+    },
+
+    loadProtoFilesFromDirectory: async (dirPath) => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/proto-dir?path=${encodeURIComponent(dirPath)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to load proto files from directory: ${err.message}`);
+      }
+    },
+
+    getProtoDirectory: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/grpc/proto-dir`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        console.error('Failed to get proto directory:', err);
+        return '';
+      }
+    },
+  },
 };
 
 export default api;

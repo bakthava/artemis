@@ -24,14 +24,17 @@ type Config struct {
 
 // App struct
 type App struct {
-	ctx                   context.Context
-	config                *Config
-	database              *db.DB
-	collectionRepository  *db.CollectionRepository
-	environmentRepository *db.EnvironmentRepository
-	historyRepository     *db.HistoryRepository
-	flowRepository        *db.FlowRepository
-	httpClient            *services.HTTPClient
+	ctx                    context.Context
+	config                 *Config
+	database               *db.DB
+	collectionRepository   *db.CollectionRepository
+	environmentRepository  *db.EnvironmentRepository
+	historyRepository      *db.HistoryRepository
+	flowRepository         *db.FlowRepository
+	httpClient             *services.HTTPClient
+	grpcClient             *services.GRPCClient
+	protoFileManager       *services.ProtoFileManager
+	descriptorLoader       *services.DescriptorLoader
 }
 
 // NewApp creates a new App application struct
@@ -62,11 +65,31 @@ func (a *App) startup(ctx context.Context) {
 
 	// Initialize HTTP client
 	a.httpClient = services.NewHTTPClient()
+
+	// Initialize gRPC client and proto file manager
+	a.grpcClient = services.NewGRPCClient()
+	dataDir := filepath.Join(os.Getenv("APPDATA"), "artemis")
+	a.protoFileManager = services.NewProtoFileManager(dataDir)
+	a.descriptorLoader = services.NewDescriptorLoader()
 }
 
-// ExecuteRequest executes an HTTP request
+// ExecuteRequest executes an HTTP or gRPC request
 func (a *App) ExecuteRequest(req *models.Request) (*models.Response, error) {
-	response, err := a.httpClient.ExecuteRequest(req)
+	// Default to HTTP if type not specified (for backward compatibility)
+	if req.Type == "" {
+		req.Type = models.RequestTypeHTTP
+	}
+
+	var response *models.Response
+	var err error
+
+	// Route to appropriate client based on request type
+	if req.Type == models.RequestTypeGRPC {
+		response, err = a.grpcClient.ExecuteRequest(req)
+	} else {
+		response, err = a.httpClient.ExecuteRequest(req)
+	}
+
 	if err != nil {
 		if response == nil {
 			response = &models.Response{
@@ -79,7 +102,7 @@ func (a *App) ExecuteRequest(req *models.Request) (*models.Response, error) {
 				ConnectionTime: 0,
 				NetworkTime:    0,
 				ResponseTime:   0,
-				Protocol:       req.HTTPVersion,
+				Protocol:       "",
 				LogLevel:       req.LogLevel,
 				Logs:           []string{"[ERROR] request failed"},
 				Timestamp:      time.Now().Unix(),
@@ -223,6 +246,57 @@ func (a *App) SaveFlowToFile(flow *models.Flow) (string, error) {
 // Config method
 func (a *App) GetConfig() *Config {
 	return a.config
+}
+
+// gRPC Proto Management methods
+
+// GetAvailableGRPCServices returns all available gRPC services from uploaded and directory proto files
+func (a *App) GetAvailableGRPCServices() (map[string][]*models.ProtoMethod, error) {
+	services := make(map[string][]*models.ProtoMethod)
+
+	// Get proto files from upload directory
+	uploadedFiles, err := a.protoFileManager.ListProtoFiles()
+	if err == nil {
+		for _, filename := range uploadedFiles {
+			filePath := a.protoFileManager.GetProtoFilePath(filename)
+			if protoFile, err := a.descriptorLoader.LoadProtoFile(filePath); err == nil {
+				for _, svc := range protoFile.Services {
+					fullName := svc.Name
+					if protoFile.PackageName != "" {
+						fullName = protoFile.PackageName + "." + svc.Name
+					}
+					services[fullName] = &svc.Methods
+				}
+			}
+		}
+	}
+
+	return services, nil
+}
+
+// UploadProtoFile saves an uploaded proto file
+func (a *App) UploadProtoFile(filename string, content string) error {
+	return a.protoFileManager.UploadProtoFile(filename, []byte(content))
+}
+
+// DeleteProtoFile removes a proto file
+func (a *App) DeleteProtoFile(filename string) error {
+	return a.protoFileManager.DeleteProtoFile(filename)
+}
+
+// ListProtoFiles returns all uploaded proto files
+func (a *App) ListProtoFiles() ([]string, error) {
+	return a.protoFileManager.ListProtoFiles()
+}
+
+// LoadProtoFilesFromDirectory scans a directory for proto files
+func (a *App) LoadProtoFilesFromDirectory(dirPath string) ([]string, error) {
+	return a.protoFileManager.LoadProtoFilesFromDirectory(dirPath)
+}
+
+// GetProtoDirectory returns the directory where proto files are stored
+func (a *App) GetProtoDirectory() string {
+	return a.protoFileManager.GetProtoDirectory()
 }
 
 // shutdown is called when the app closes

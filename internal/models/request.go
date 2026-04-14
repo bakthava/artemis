@@ -1,9 +1,45 @@
 package models
 
-// Request represents an HTTP request
+// RequestType defines the protocol type for a request
+type RequestType string
+
+const (
+	RequestTypeHTTP RequestType = "HTTP"
+	RequestTypeGRPC RequestType = "GRPC"
+)
+
+// StreamingCallType defines gRPC streaming call types
+type StreamingCallType string
+
+const (
+	StreamingCallTypeUnary              StreamingCallType = "unary"
+	StreamingCallTypeServerStream       StreamingCallType = "server_stream"
+	StreamingCallTypeClientStream       StreamingCallType = "client_stream"
+	StreamingCallTypeBidirectionalStream StreamingCallType = "bidirectional_stream"
+)
+
+// GRPCConfig contains configuration for gRPC requests
+type GRPCConfig struct {
+	Service         string                       `json:"service"`         // Fully qualified service name (e.g., "helloworld.Greeter")
+	Method          string                       `json:"method"`          // RPC method name (e.g., "SayHello")
+	ProtoPath       string                       `json:"protoPath"`       // Path to .proto file or directory
+	ProtoDirectory  string                       `json:"protoDirectory"`  // Path to directory containing .proto files
+	MessageFormat   string                       `json:"messageFormat"`   // "JSON" or "BINARY"
+	Metadata        map[string]string            `json:"metadata"`        // gRPC metadata headers
+	CallType        StreamingCallType            `json:"callType"`        // Type of gRPC call (unary, server_stream, etc)
+	UseServerCipherSuite bool                    `json:"useServerCipherSuite"`
+	DisabledTLSProtocols []string                `json:"disabledTLSProtocols"` // TLSv1.2, TLSv1.3, etc
+	CipherSuites    []string                     `json:"cipherSuites"`    // custom cipher suite order
+	CertificateFile string                       `json:"certificateFile"` // Client certificate file path for mTLS
+	KeyFile         string                       `json:"keyFile"`         // Client key file path for mTLS
+	CACertFile      string                       `json:"caCertFile"`      // CA certificate file path
+}
+
+// Request represents an HTTP or gRPC request
 type Request struct {
 	ID                      string            `json:"id"`
 	Name                    string            `json:"name"`
+	Type                    RequestType       `json:"type"` // HTTP or GRPC (default: HTTP)
 	Method                  string            `json:"method"`
 	URL                     string            `json:"url"`
 	Headers                 map[string]string `json:"headers"`
@@ -11,6 +47,7 @@ type Request struct {
 	Body                    string            `json:"body"`
 	BodyType                string            `json:"bodyType"` // json, xml, form, text
 	Auth                    *Auth             `json:"auth"`
+	GRPCConfig              *GRPCConfig       `json:"grpcConfig"` // gRPC-specific configuration
 	PreScript               string            `json:"preScript"`
 	PostScript              string            `json:"postScript"`
 	Timeout                 int               `json:"timeout"`     // in seconds

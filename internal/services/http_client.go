@@ -1,11 +1,11 @@
 package services
 
 import (
+	"artemis/internal/models"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"artemis/internal/models"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -446,7 +446,7 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 	// Load client certificates if provided (from base64-encoded strings)
 	var clientCerts []tls.Certificate
 	var certCleanup func()
-	
+
 	if req.CertificateFile != "" && req.KeyFile != "" {
 		cert, cleanup, err := hc.loadClientCertificateFromBase64(req.CertificateFile, req.KeyFile)
 		if err != nil {
@@ -459,9 +459,9 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 	if protocol == "HTTP/3" {
 		transport := &http3.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: !req.VerifySSL,
-				Certificates:       clientCerts,
-				NextProtos:         []string{http3.NextProtoH3},
+				InsecureSkipVerify:       !req.VerifySSL,
+				Certificates:             clientCerts,
+				NextProtos:               []string{http3.NextProtoH3},
 				PreferServerCipherSuites: req.UseServerCipherSuite,
 			},
 		}
@@ -485,8 +485,8 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 	}
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: !req.VerifySSL,
-		Certificates:       clientCerts,
+		InsecureSkipVerify:       !req.VerifySSL,
+		Certificates:             clientCerts,
 		PreferServerCipherSuites: req.UseServerCipherSuite,
 	}
 
@@ -692,19 +692,19 @@ func (hc *HTTPClient) applyCipherSuites(cfg *tls.Config, suites []string) {
 // Returns the certificate and a cleanup function to remove temporary files
 func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 string) (tls.Certificate, func(), error) {
 	var cert tls.Certificate
-	
+
 	// Decode certificate
 	certData, err := base64.StdEncoding.DecodeString(certBase64)
 	if err != nil {
 		return cert, nil, fmt.Errorf("failed to decode certificate: %w", err)
 	}
-	
+
 	// Decode key
 	keyData, err := base64.StdEncoding.DecodeString(keyBase64)
 	if err != nil {
 		return cert, nil, fmt.Errorf("failed to decode key: %w", err)
 	}
-	
+
 	// Create temporary files
 	certFile, err := os.CreateTemp("", "cert-*.pem")
 	if err != nil {
@@ -712,12 +712,12 @@ func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 stri
 	}
 	certPath := certFile.Name()
 	defer certFile.Close()
-	
+
 	if _, err := certFile.Write(certData); err != nil {
 		os.Remove(certPath)
 		return cert, nil, fmt.Errorf("failed to write certificate: %w", err)
 	}
-	
+
 	keyFile, err := os.CreateTemp("", "key-*.pem")
 	if err != nil {
 		os.Remove(certPath)
@@ -725,13 +725,13 @@ func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 stri
 	}
 	keyPath := keyFile.Name()
 	defer keyFile.Close()
-	
+
 	if _, err := keyFile.Write(keyData); err != nil {
 		os.Remove(certPath)
 		os.Remove(keyPath)
 		return cert, nil, fmt.Errorf("failed to write key: %w", err)
 	}
-	
+
 	// Load the certificate pair
 	cert, err = tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
@@ -739,13 +739,13 @@ func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 stri
 		os.Remove(keyPath)
 		return cert, nil, fmt.Errorf("failed to load X509 key pair: %w", err)
 	}
-	
+
 	// Return cleanup function
 	cleanup := func() {
 		os.Remove(certPath)
 		os.Remove(keyPath)
 	}
-	
+
 	return cert, cleanup, nil
 }
 

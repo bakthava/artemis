@@ -3,6 +3,10 @@ import React, { createContext, useReducer, useCallback, useEffect } from 'react'
 export const RequestContext = createContext();
 
 const initialState = {
+  // Request Type
+  requestType: 'HTTP',  // HTTP or GRPC
+
+  // HTTP Settings
   method: 'GET',
   url: '',
   headers: {},
@@ -38,10 +42,29 @@ const initialState = {
   // Certificates
   certificateFile: null,
   keyFile: null,
+
+  // gRPC Settings
+  grpcConfig: {
+    service: '',
+    method: '',
+    protoPath: '',
+    protoDirectory: '',
+    messageFormat: 'JSON',  // JSON or BINARY
+    metadata: {},
+    callType: 'unary',  // unary, server_stream, client_stream, bidirectional_stream
+    useServerCipherSuite: false,
+    disabledTLSProtocols: [],
+    cipherSuites: [],
+    certificateFile: null,
+    keyFile: null,
+    caCertFile: null,
+  },
 };
 
 const requestReducer = (state, action) => {
   switch (action.type) {
+    case 'SET_REQUEST_TYPE':
+      return { ...state, requestType: action.payload };
     case 'SET_METHOD':
       return { ...state, method: action.payload };
     case 'SET_URL':
@@ -62,6 +85,8 @@ const requestReducer = (state, action) => {
       return { ...state, postScript: action.payload };
     case 'SET_TIMEOUT':
       return { ...state, timeout: action.payload };
+    case 'SET_GRPC_CONFIG':
+      return { ...state, grpcConfig: { ...state.grpcConfig, ...action.payload } };
     case 'SET_REQUEST':
       return { ...state, ...action.payload };
     case 'LOAD_REQUEST':
@@ -142,11 +167,20 @@ export const RequestProvider = ({ children }) => {
     dispatch({ type: 'SET_TIMEOUT', payload: timeout });
   }, []);
 
+  const setRequestType = useCallback((type) => {
+    dispatch({ type: 'SET_REQUEST_TYPE', payload: type });
+  }, []);
+
+  const setGRPCConfig = useCallback((config) => {
+    dispatch({ type: 'SET_GRPC_CONFIG', payload: config });
+  }, []);
+
   const loadRequest = useCallback((request) => {
     dispatch({ 
       type: 'LOAD_REQUEST', 
       payload: {
         ...initialState,
+        requestType: request.type || 'HTTP',
         method: request.method || 'GET',
         url: request.url || '',
         headers: request.headers || {},
@@ -171,6 +205,7 @@ export const RequestProvider = ({ children }) => {
         disabledTLSProtocols: request.disabledTLSProtocols || [],
         cipherSuites: request.cipherSuites || [],
         logLevel: request.logLevel || 'info',
+        grpcConfig: request.grpcConfig || initialState.grpcConfig,
       }
     });
   }, []);
@@ -185,6 +220,7 @@ export const RequestProvider = ({ children }) => {
 
   const value = {
     request: state,
+    setRequestType,
     setMethod,
     setUrl,
     setHeaders,
@@ -195,6 +231,7 @@ export const RequestProvider = ({ children }) => {
     setPreScript,
     setPostScript,
     setTimeout,
+    setGRPCConfig,
     setRequest,
     loadRequest,
     reset,
