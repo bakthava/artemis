@@ -27,6 +27,10 @@ jobs:
             label: macos
             artifact_name: artemis-macos
 
+    env:
+      HAS_APPLE_SIGNING: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION != '' }}
+      HAS_APPLE_NOTARY: ${{ secrets.APPLE_NOTARY_APPLE_ID != '' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -143,7 +147,7 @@ jobs:
           ditto -c -k dist/${{ matrix.artifact_name }} dist/${{ matrix.artifact_name }}.zip
 
       - name: macOS signing placeholder
-        if: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_APPLICATION != '' }}
+        if: runner.os == 'macOS' && env.HAS_APPLE_SIGNING == 'true'
         shell: bash
         env:
           APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
@@ -155,7 +159,7 @@ jobs:
           echo "Example identity: $APPLE_DEVELOPER_ID_APPLICATION"
 
       - name: macOS notarization placeholder
-        if: ${{ runner.os == 'macOS' && secrets.APPLE_NOTARY_APPLE_ID != '' }}
+        if: runner.os == 'macOS' && env.HAS_APPLE_NOTARY == 'true'
         shell: bash
         env:
           APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
