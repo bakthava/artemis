@@ -76,6 +76,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
           disabledTLSProtocols: request.disabledTLSProtocols,
           cipherSuites: request.cipherSuites,
           logLevel: request.logLevel,
+          certificateFile: request.certificateFile,
+          keyFile: request.keyFile,
+          jksFile: request.jksFile,
+          jksPassword: request.jksPassword,
         });
       }
       
