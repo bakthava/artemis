@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
-import { TestJKS } from '../../wailsjs/go/main/App';
+const API_BASE = `${window.location.origin}/api`;
 
 function SettingsModal({ isOpen, onClose }) {
   const { request, setRequest } = useRequest();
@@ -19,6 +19,8 @@ function SettingsModal({ isOpen, onClose }) {
   const [jksPassword, setJksPassword] = useState(request.jksPassword || '');
   const [jksTesting, setJksTesting] = useState(false);
   const [jksTestResult, setJksTestResult] = useState(null);
+  const [mtlsServer, setMtlsServer] = useState(null);
+  const [mtlsStarting, setMtlsStarting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -227,7 +229,12 @@ function SettingsModal({ isOpen, onClose }) {
     setJksTesting(true);
     setJksTestResult(null);
     try {
-      const result = await TestJKS(request.jksFile, jksPassword);
+      const resp = await fetch(`${API_BASE}/certificates/test-jks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jksBase64: request.jksFile, password: jksPassword }),
+      });
+      const result = await resp.json();
       setJksTestResult(result);
       if (result.expired) {
         showToast('JKS keystore is valid but the certificate has expired', 'warning');
@@ -239,6 +246,45 @@ function SettingsModal({ isOpen, onClose }) {
       showToast(`JKS test failed: ${err.message || err}`, 'error');
     } finally {
       setJksTesting(false);
+    }
+  };
+
+  const handleStartMTLSServer = async () => {
+    setMtlsStarting(true);
+    try {
+      const resp = await fetch(`${API_BASE}/certificates/mtls-server/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: 8443 }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const result = await resp.json();
+      setMtlsServer(result);
+      // Auto-import the generated JKS into the certificate fields
+      setJksFileName('mtls-test-client.jks');
+      setJksPassword(result.jksPassword);
+      setJksTestResult(null);
+      setRequest({
+        ...request,
+        jksFile: result.jksBase64,
+        jksPassword: result.jksPassword,
+      });
+      showToast(`mTLS test server started at ${result.url}`, 'success');
+    } catch (err) {
+      showToast(`Failed to start mTLS server: ${err.message || err}`, 'error');
+    } finally {
+      setMtlsStarting(false);
+    }
+  };
+
+  const handleStopMTLSServer = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/certificates/mtls-server/stop`, { method: 'POST' });
+      if (!resp.ok) throw new Error(await resp.text());
+      setMtlsServer(null);
+      showToast('mTLS test server stopped', 'info');
+    } catch (err) {
+      showToast(`Failed to stop server: ${err.message || err}`, 'error');
     }
   };
 
@@ -942,6 +988,77 @@ function SettingsModal({ isOpen, onClose }) {
                   )}
                 </>
               )}
+
+              {/* mTLS Test Server */}
+              <div className="form-group settings-group" style={{
+                marginTop: '16px',
+                padding: '16px',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                background: 'var(--bg-secondary)',
+              }}>
+                <label className="form-label" style={{ fontSize: '14px' }}>mTLS Test Server</label>
+                <small className="settings-help-text" style={{ marginBottom: '12px' }}>
+                  Start a local HTTPS server that requires client certificates (2-way SSL).
+                  It will auto-generate a JKS keystore and import it for you.
+                </small>
+
+                {mtlsServer ? (
+                  <div>
+                    <div style={{
+                      padding: '12px',
+                      backgroundColor: '#dcfce7',
+                      borderRadius: '4px',
+                      marginBottom: '12px',
+                      borderLeft: '3px solid #22c55e',
+                    }}>
+                      <strong style={{ color: '#166534' }}>Server Running</strong>
+                      <div style={{ marginTop: '8px', fontSize: '13px', lineHeight: '1.6', color: '#15803d' }}>
+                        <div><strong>URL:</strong> {mtlsServer.url}</div>
+                        <div><strong>JKS Password:</strong> {mtlsServer.jksPassword}</div>
+                        <div><strong>Client:</strong> {mtlsServer.clientSubject}</div>
+                      </div>
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#166534' }}>
+                        JKS has been auto-imported above. Send a request to {mtlsServer.url} with SSL verification disabled.
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleStopMTLSServer}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: '4px',
+                        border: '1px solid #fecaca',
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                      }}
+                    >
+                      Stop Test Server
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleStartMTLSServer}
+                    disabled={mtlsStarting}
+                    style={{
+                      width: '100%',
+                      padding: '10px 16px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: mtlsStarting ? '#93c5fd' : '#3b82f6',
+                      color: '#fff',
+                      cursor: mtlsStarting ? 'not-allowed' : 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                    }}
+                  >
+                    {mtlsStarting ? 'Starting...' : 'Start mTLS Test Server (port 8443)'}
+                  </button>
+                )}
+              </div>
 
               {/* Export Options */}
               <div className="form-group settings-group">

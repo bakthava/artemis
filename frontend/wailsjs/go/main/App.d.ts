@@ -30,6 +30,10 @@ export function TestJKS(arg1:string,arg2:string):Promise<Record<string,any>>;
 
 export function SetActiveEnvironment(arg1:string):Promise<void>;
 
+export function StartMTLSTestServer(arg1:number):Promise<Record<string,any>>;
+
+export function StopMTLSTestServer():Promise<void>;
+
 export function UpdateCollection(arg1:models.Collection):Promise<void>;
 
 export function UpdateEnvironment(arg1:models.Environment):Promise<void>;

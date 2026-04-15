@@ -68,6 +68,11 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("POST /api/request/execute", s.handleExecuteRequest)
 	s.router.HandleFunc("OPTIONS /api/request/execute", s.handleCORSOptions)
 
+	// Certificate / mTLS test endpoints
+	s.router.HandleFunc("POST /api/certificates/test-jks", s.handleTestJKS)
+	s.router.HandleFunc("POST /api/certificates/mtls-server/start", s.handleStartMTLSServer)
+	s.router.HandleFunc("POST /api/certificates/mtls-server/stop", s.handleStopMTLSServer)
+
 	// Serve frontend (SPA fallback to index.html)
 	s.router.HandleFunc("/", s.handleStatic)
 }
@@ -395,6 +400,57 @@ func (s *HTTPServer) handleExportFlowToFile(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"filePath": filePath})
+}
+
+func (s *HTTPServer) handleTestJKS(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		JKSBase64 string `json:"jksBase64"`
+		Password  string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	result, err := s.app.TestJKS(req.JKSBase64, req.Password)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"valid": false, "error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *HTTPServer) handleStartMTLSServer(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Port int `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Port == 0 {
+		req.Port = 8443
+	}
+	result, err := s.app.StartMTLSTestServer(req.Port)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *HTTPServer) handleStopMTLSServer(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	if err := s.app.StopMTLSTestServer(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

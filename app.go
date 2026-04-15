@@ -5,12 +5,23 @@ import (
 	"artemis/internal/models"
 	"artemis/internal/services"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	keystore "github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
 // Config struct for application settings
@@ -35,6 +46,7 @@ type App struct {
 	grpcClient             *services.GRPCClient
 	protoFileManager       *services.ProtoFileManager
 	descriptorLoader       *services.DescriptorLoader
+	mtlsTestServer         *http.Server
 }
 
 // NewApp creates a new App application struct
@@ -277,6 +289,182 @@ func (a *App) TestJKS(jksBase64 string, password string) (map[string]interface{}
 	}
 
 	return result, nil
+}
+
+// StartMTLSTestServer generates a CA, server cert, client cert + JKS, and starts an mTLS HTTPS server.
+// Returns connection info including the JKS file (base64), password, and server URL.
+func (a *App) StartMTLSTestServer(port int) (map[string]interface{}, error) {
+	if a.mtlsTestServer != nil {
+		return nil, fmt.Errorf("mTLS test server is already running")
+	}
+	if port == 0 {
+		port = 8443
+	}
+
+	jksPassword := "artemis123"
+
+	// Generate CA
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("generate CA key: %w", err)
+	}
+	caSerial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	caTemplate := &x509.Certificate{
+		SerialNumber:          caSerial,
+		Subject:               pkix.Name{CommonName: "Artemis Test CA", Organization: []string{"Artemis"}},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caCertDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("create CA cert: %w", err)
+	}
+	caCert, _ := x509.ParseCertificate(caCertDER)
+
+	// Generate server cert signed by CA
+	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("generate server key: %w", err)
+	}
+	serverSerial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serverTemplate := &x509.Certificate{
+		SerialNumber:          serverSerial,
+		Subject:               pkix.Name{CommonName: "localhost", Organization: []string{"Artemis"}},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:              []string{"localhost", "127.0.0.1"},
+		BasicConstraintsValid: true,
+	}
+	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("create server cert: %w", err)
+	}
+	serverTLSCert := tls.Certificate{
+		Certificate: [][]byte{serverCertDER},
+		PrivateKey:  serverKey,
+	}
+
+	// Generate client cert signed by CA
+	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("generate client key: %w", err)
+	}
+	clientSerial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	clientTemplate := &x509.Certificate{
+		SerialNumber:          clientSerial,
+		Subject:               pkix.Name{CommonName: "artemis-client", Organization: []string{"Artemis"}},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	clientCertDER, err := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("create client cert: %w", err)
+	}
+
+	// Build JKS from client cert
+	pkcs8Key, err := x509.MarshalPKCS8PrivateKey(clientKey)
+	if err != nil {
+		return nil, fmt.Errorf("marshal client key to PKCS8: %w", err)
+	}
+	ks := keystore.New()
+	entry := keystore.PrivateKeyEntry{
+		CreationTime: time.Now(),
+		PrivateKey:   pkcs8Key,
+		CertificateChain: []keystore.Certificate{
+			{Type: "X.509", Content: clientCertDER},
+		},
+	}
+	if err := ks.SetPrivateKeyEntry("client", entry, []byte(jksPassword)); err != nil {
+		return nil, fmt.Errorf("set JKS entry: %w", err)
+	}
+
+	var jksBuf strings.Builder
+	jksEncoder := base64.NewEncoder(base64.StdEncoding, &jksBuf)
+	if err := ks.Store(jksEncoder, []byte(jksPassword)); err != nil {
+		return nil, fmt.Errorf("store JKS: %w", err)
+	}
+	jksEncoder.Close()
+
+	// Build server TLS config requiring client certs
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+	serverTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{serverTLSCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    caPool,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// Create HTTP handler
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"status":  "ok",
+			"message": "mTLS 2-way SSL successful!",
+			"time":    time.Now().Format(time.RFC3339),
+			"method":  r.Method,
+			"path":    r.URL.Path,
+		}
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			peer := r.TLS.PeerCertificates[0]
+			resp["client_subject"] = peer.Subject.String()
+			resp["client_issuer"] = peer.Issuer.String()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	a.mtlsTestServer = &http.Server{
+		Addr:      fmt.Sprintf(":%d", port),
+		Handler:   mux,
+		TLSConfig: serverTLSConfig,
+	}
+
+	// Start in background
+	ln, err := net.Listen("tcp", a.mtlsTestServer.Addr)
+	if err != nil {
+		a.mtlsTestServer = nil
+		return nil, fmt.Errorf("failed to listen on port %d: %w", port, err)
+	}
+	tlsLn := tls.NewListener(ln, serverTLSConfig)
+	go func() {
+		if err := a.mtlsTestServer.Serve(tlsLn); err != http.ErrServerClosed {
+			fmt.Printf("mTLS test server error: %v\n", err)
+		}
+	}()
+
+	// Parse client cert for info
+	clientParsed, _ := x509.ParseCertificate(clientCertDER)
+
+	return map[string]interface{}{
+		"url":         fmt.Sprintf("https://localhost:%d", port),
+		"port":        port,
+		"jksBase64":   jksBuf.String(),
+		"jksPassword": jksPassword,
+		"clientSubject": clientParsed.Subject.String(),
+		"clientNotAfter": clientParsed.NotAfter.Format(time.RFC3339),
+	}, nil
+}
+
+// StopMTLSTestServer stops the running mTLS test server
+func (a *App) StopMTLSTestServer() error {
+	if a.mtlsTestServer == nil {
+		return fmt.Errorf("no mTLS test server is running")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := a.mtlsTestServer.Shutdown(ctx)
+	a.mtlsTestServer = nil
+	return err
 }
 
 // Config method

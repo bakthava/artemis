@@ -58,6 +58,14 @@ export function SetActiveEnvironment(arg1) {
   return window['go']['main']['App']['SetActiveEnvironment'](arg1);
 }
 
+export function StartMTLSTestServer(arg1) {
+  return window['go']['main']['App']['StartMTLSTestServer'](arg1);
+}
+
+export function StopMTLSTestServer() {
+  return window['go']['main']['App']['StopMTLSTestServer']();
+}
+
 export function UpdateCollection(arg1) {
   return window['go']['main']['App']['UpdateCollection'](arg1);
 }
