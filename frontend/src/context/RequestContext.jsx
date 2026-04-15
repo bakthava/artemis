@@ -42,6 +42,8 @@ const initialState = {
   // Certificates
   certificateFile: null,
   keyFile: null,
+  jksFile: null,
+  jksPassword: '',
 
   // gRPC Settings
   grpcConfig: {

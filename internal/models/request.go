@@ -68,7 +68,8 @@ type Request struct {
 	LogLevel                string            `json:"logLevel"`             // error, info, debug, trace
 	CertificateFile         string            `json:"certificateFile"`      // Client certificate file path (PEM/CER/PKCS#12)
 	KeyFile                 string            `json:"keyFile"`              // Client key file path (PEM/PKCS#8)
-	JksFile                 string            `json:"jksFile"`              // Java KeyStore file path
+	JksFile                 string            `json:"jksFile"`              // Java KeyStore file (base64-encoded)
+	JksPassword             string            `json:"jksPassword"`          // Java KeyStore password
 }
 
 // Auth represents authentication settings

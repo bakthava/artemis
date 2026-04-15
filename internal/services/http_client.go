@@ -2,7 +2,9 @@ package services
 
 import (
 	"artemis/internal/models"
+	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	keystore "github.com/pavlo-v-chernykh/keystore-go/v4"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -447,7 +450,14 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 	var clientCerts []tls.Certificate
 	var certCleanup func()
 
-	if req.CertificateFile != "" && req.KeyFile != "" {
+	if req.JksFile != "" {
+		// JKS takes priority over separate cert+key files
+		cert, err := hc.loadJKSFromBase64(req.JksFile, req.JksPassword)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to load JKS keystore: %w", err)
+		}
+		clientCerts = []tls.Certificate{cert}
+	} else if req.CertificateFile != "" && req.KeyFile != "" {
 		cert, cleanup, err := hc.loadClientCertificateFromBase64(req.CertificateFile, req.KeyFile)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load client certificate: %w", err)
@@ -752,6 +762,50 @@ func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 stri
 	}
 
 	return cert, cleanup, nil
+}
+
+// loadJKSFromBase64 loads a client certificate from a base64-encoded JKS keystore
+func (hc *HTTPClient) loadJKSFromBase64(jksBase64, password string) (tls.Certificate, error) {
+	var cert tls.Certificate
+
+	jksData, err := base64.StdEncoding.DecodeString(jksBase64)
+	if err != nil {
+		return cert, fmt.Errorf("failed to decode JKS data: %w", err)
+	}
+
+	ks := keystore.New()
+	if err := ks.Load(bytes.NewReader(jksData), []byte(password)); err != nil {
+		return cert, fmt.Errorf("failed to load JKS keystore (wrong password?): %w", err)
+	}
+
+	// Find the first private key entry in the keystore
+	for _, alias := range ks.Aliases() {
+		if !ks.IsPrivateKeyEntry(alias) {
+			continue
+		}
+		entry, err := ks.GetPrivateKeyEntry(alias, []byte(password))
+		if err != nil {
+			continue
+		}
+
+		privateKey, err := x509.ParsePKCS8PrivateKey(entry.PrivateKey)
+		if err != nil {
+			return cert, fmt.Errorf("failed to parse private key from JKS: %w", err)
+		}
+
+		var tlsCerts [][]byte
+		for _, certEntry := range entry.CertificateChain {
+			tlsCerts = append(tlsCerts, certEntry.Content)
+		}
+
+		cert = tls.Certificate{
+			Certificate: tlsCerts,
+			PrivateKey:  privateKey,
+		}
+		return cert, nil
+	}
+
+	return cert, fmt.Errorf("no private key entry found in JKS keystore")
 }
 
 // addAuth adds authentication header to the request

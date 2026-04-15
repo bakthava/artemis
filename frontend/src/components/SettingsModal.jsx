@@ -15,6 +15,7 @@ function SettingsModal({ isOpen, onClose }) {
   const [certFileName, setCertFileName] = useState(request.certificateFile?.name || null);
   const [keyFileName, setKeyFileName] = useState(request.keyFile?.name || null);
   const [jksFileName, setJksFileName] = useState(request.jksFile?.name || null);
+  const [jksPassword, setJksPassword] = useState(request.jksPassword || '');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -191,9 +192,9 @@ function SettingsModal({ isOpen, onClose }) {
     try {
       const base64Content = await readFileAsBase64(file);
       setJksFileName(file.name);
-      setRequest({ ...request, jksFile: base64Content });
-      showToast(`JKS Keystore imported: ${file.name}`, 'success');
-      showToast('✓ JKS Keystore contains both certificate and private key', 'info');
+      setJksPassword('');
+      setRequest({ ...request, jksFile: base64Content, jksPassword: '' });
+      showToast(`JKS Keystore imported: ${file.name}. Please enter the keystore password.`, 'success');
     } catch (err) {
       showToast(`Error reading JKS file: ${err.message}`, 'error');
     }
@@ -204,7 +205,8 @@ function SettingsModal({ isOpen, onClose }) {
 
   const handleClearJKS = () => {
     setJksFileName(null);
-    setRequest({ ...request, jksFile: null });
+    setJksPassword('');
+    setRequest({ ...request, jksFile: null, jksPassword: '' });
     showToast('JKS Keystore cleared', 'info');
   };
 
@@ -617,7 +619,7 @@ function SettingsModal({ isOpen, onClose }) {
                     padding: '12px',
                     backgroundColor: '#dcfce7',
                     borderRadius: '4px',
-                    marginBottom: '16px',
+                    marginBottom: '12px',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -663,6 +665,32 @@ function SettingsModal({ isOpen, onClose }) {
                   >
                     Choose JKS Keystore File
                   </button>
+                )}
+
+                {/* JKS Password */}
+                {jksFileName && (
+                  <div className="form-group settings-group" style={{ marginBottom: '16px' }}>
+                    <label className="form-label">Keystore Password</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Enter JKS keystore password"
+                      value={jksPassword}
+                      onChange={(e) => {
+                        setJksPassword(e.target.value);
+                        setRequest({ ...request, jksPassword: e.target.value });
+                      }}
+                      style={{ marginTop: '4px' }}
+                    />
+                    <small className="settings-help-text">
+                      JKS keystores require a password to access the certificate and private key.
+                    </small>
+                    {jksPassword === '' && (
+                      <small style={{ color: '#f59e0b', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                        ⚠ Password is required to use this keystore for HTTPS requests.
+                      </small>
+                    )}
+                  </div>
                 )}
               </div>
 
