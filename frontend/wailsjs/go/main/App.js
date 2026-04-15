@@ -50,6 +50,10 @@ export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
 
+export function TestJKS(arg1, arg2) {
+  return window['go']['main']['App']['TestJKS'](arg1, arg2);
+}
+
 export function SetActiveEnvironment(arg1) {
   return window['go']['main']['App']['SetActiveEnvironment'](arg1);
 }

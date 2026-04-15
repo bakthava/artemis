@@ -452,7 +452,7 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 
 	if req.JksFile != "" {
 		// JKS takes priority over separate cert+key files
-		cert, err := hc.loadJKSFromBase64(req.JksFile, req.JksPassword)
+		cert, err := hc.LoadJKSFromBase64(req.JksFile, req.JksPassword)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load JKS keystore: %w", err)
 		}
@@ -764,8 +764,8 @@ func (hc *HTTPClient) loadClientCertificateFromBase64(certBase64, keyBase64 stri
 	return cert, cleanup, nil
 }
 
-// loadJKSFromBase64 loads a client certificate from a base64-encoded JKS keystore
-func (hc *HTTPClient) loadJKSFromBase64(jksBase64, password string) (tls.Certificate, error) {
+// LoadJKSFromBase64 loads a client certificate from a base64-encoded JKS keystore
+func (hc *HTTPClient) LoadJKSFromBase64(jksBase64, password string) (tls.Certificate, error) {
 	var cert tls.Certificate
 
 	jksData, err := base64.StdEncoding.DecodeString(jksBase64)
@@ -806,6 +806,11 @@ func (hc *HTTPClient) loadJKSFromBase64(jksBase64, password string) (tls.Certifi
 	}
 
 	return cert, fmt.Errorf("no private key entry found in JKS keystore")
+}
+
+// ParseX509Certificate parses a DER-encoded x509 certificate
+func ParseX509Certificate(derBytes []byte) (*x509.Certificate, error) {
+	return x509.ParseCertificate(derBytes)
 }
 
 // addAuth adds authentication header to the request

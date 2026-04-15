@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
+import { TestJKS } from '../../wailsjs/go/main/App';
 
 function SettingsModal({ isOpen, onClose }) {
   const { request, setRequest } = useRequest();
@@ -16,6 +17,8 @@ function SettingsModal({ isOpen, onClose }) {
   const [keyFileName, setKeyFileName] = useState(request.keyFile?.name || null);
   const [jksFileName, setJksFileName] = useState(request.jksFile?.name || null);
   const [jksPassword, setJksPassword] = useState(request.jksPassword || '');
+  const [jksTesting, setJksTesting] = useState(false);
+  const [jksTestResult, setJksTestResult] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -193,6 +196,7 @@ function SettingsModal({ isOpen, onClose }) {
       const base64Content = await readFileAsBase64(file);
       setJksFileName(file.name);
       setJksPassword('');
+      setJksTestResult(null);
       setRequest({ ...request, jksFile: base64Content, jksPassword: '' });
       showToast(`JKS Keystore imported: ${file.name}. Please enter the keystore password.`, 'success');
     } catch (err) {
@@ -206,8 +210,36 @@ function SettingsModal({ isOpen, onClose }) {
   const handleClearJKS = () => {
     setJksFileName(null);
     setJksPassword('');
+    setJksTestResult(null);
     setRequest({ ...request, jksFile: null, jksPassword: '' });
     showToast('JKS Keystore cleared', 'info');
+  };
+
+  const handleTestJKS = async () => {
+    if (!request.jksFile) {
+      showToast('No JKS file imported', 'error');
+      return;
+    }
+    if (!jksPassword) {
+      showToast('Please enter the keystore password first', 'error');
+      return;
+    }
+    setJksTesting(true);
+    setJksTestResult(null);
+    try {
+      const result = await TestJKS(request.jksFile, jksPassword);
+      setJksTestResult(result);
+      if (result.expired) {
+        showToast('JKS keystore is valid but the certificate has expired', 'warning');
+      } else {
+        showToast('JKS keystore is valid ✓', 'success');
+      }
+    } catch (err) {
+      setJksTestResult({ valid: false, error: err.message || String(err) });
+      showToast(`JKS test failed: ${err.message || err}`, 'error');
+    } finally {
+      setJksTesting(false);
+    }
   };
 
   return (
@@ -629,22 +661,42 @@ function SettingsModal({ isOpen, onClose }) {
                       <strong style={{ color: '#166534' }}>✓ {jksFileName}</strong>
                       <div style={{ fontSize: '12px', color: '#15803d' }}>JKS Keystore with cert & key imported</div>
                     </div>
-                    <button
-                      className="btn-small"
-                      onClick={handleClearJKS}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        background: '#fecaca',
-                        color: '#dc2626',
-                        border: 'none',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                      }}
-                    >
-                      Clear
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        className="btn-small"
+                        onClick={handleTestJKS}
+                        disabled={jksTesting || !jksPassword}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: jksTesting ? '#93c5fd' : '#3b82f6',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: jksTesting || !jksPassword ? 'not-allowed' : 'pointer',
+                          fontWeight: '500',
+                          opacity: !jksPassword ? 0.5 : 1,
+                        }}
+                      >
+                        {jksTesting ? 'Testing...' : 'Test'}
+                      </button>
+                      <button
+                        className="btn-small"
+                        onClick={handleClearJKS}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: '#fecaca',
+                          color: '#dc2626',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          fontWeight: '500',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <button
@@ -689,6 +741,39 @@ function SettingsModal({ isOpen, onClose }) {
                       <small style={{ color: '#f59e0b', fontSize: '12px', display: 'block', marginTop: '4px' }}>
                         ⚠ Password is required to use this keystore for HTTPS requests.
                       </small>
+                    )}
+                  </div>
+                )}
+
+                {/* JKS Test Result */}
+                {jksTestResult && (
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: jksTestResult.valid ? (jksTestResult.expired ? '#fef3c7' : '#dcfce7') : '#fef2f2',
+                    borderRadius: '4px',
+                    marginBottom: '12px',
+                    borderLeft: `3px solid ${jksTestResult.valid ? (jksTestResult.expired ? '#f59e0b' : '#22c55e') : '#ef4444'}`,
+                    fontSize: '13px',
+                  }}>
+                    {jksTestResult.valid ? (
+                      <>
+                        <strong style={{ color: jksTestResult.expired ? '#92400e' : '#166534' }}>
+                          {jksTestResult.expired ? '⚠ Certificate Expired' : '✓ Keystore Valid'}
+                        </strong>
+                        <div style={{ marginTop: '8px', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+                          <div><strong>Subject:</strong> {jksTestResult.subject}</div>
+                          <div><strong>Issuer:</strong> {jksTestResult.issuer}</div>
+                          <div><strong>Valid From:</strong> {new Date(jksTestResult.notBefore).toLocaleDateString()}</div>
+                          <div><strong>Valid Until:</strong> {new Date(jksTestResult.notAfter).toLocaleDateString()}</div>
+                          <div><strong>Serial:</strong> {jksTestResult.serialNumber}</div>
+                          <div><strong>Certificates in chain:</strong> {jksTestResult.numCerts}</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong style={{ color: '#dc2626' }}>✗ Test Failed</strong>
+                        <div style={{ marginTop: '4px', color: '#991b1b' }}>{jksTestResult.error}</div>
+                      </>
                     )}
                   </div>
                 )}

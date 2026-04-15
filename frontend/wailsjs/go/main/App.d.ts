@@ -26,6 +26,8 @@ export function GetHistory(arg1:number,arg2:number):Promise<Array<models.History
 
 export function Greet(arg1:string):Promise<string>;
 
+export function TestJKS(arg1:string,arg2:string):Promise<Record<string,any>>;
+
 export function SetActiveEnvironment(arg1:string):Promise<void>;
 
 export function UpdateCollection(arg1:models.Collection):Promise<void>;

@@ -247,6 +247,38 @@ func (a *App) SaveFlowToFile(flow *models.Flow) (string, error) {
 	return filePath, nil
 }
 
+// TestJKS validates a JKS keystore by attempting to load it with the given password
+func (a *App) TestJKS(jksBase64 string, password string) (map[string]interface{}, error) {
+	cert, err := a.httpClient.LoadJKSFromBase64(jksBase64, password)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]interface{}{
+		"valid":    true,
+		"numCerts": len(cert.Certificate),
+	}
+
+	// Parse the leaf certificate for details
+	if len(cert.Certificate) > 0 {
+		parsed, parseErr := services.ParseX509Certificate(cert.Certificate[0])
+		if parseErr == nil {
+			result["subject"] = parsed.Subject.String()
+			result["issuer"] = parsed.Issuer.String()
+			result["notBefore"] = parsed.NotBefore.Format(time.RFC3339)
+			result["notAfter"] = parsed.NotAfter.Format(time.RFC3339)
+			result["serialNumber"] = parsed.SerialNumber.String()
+			if time.Now().After(parsed.NotAfter) {
+				result["expired"] = true
+			} else {
+				result["expired"] = false
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // Config method
 func (a *App) GetConfig() *Config {
 	return a.config
