@@ -280,6 +280,11 @@ func (s *HTTPServer) handleExecuteRequest(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
+	if req.JksFile != "" {
+		fmt.Printf("[DEBUG] Request received with JKS file (size: %d bytes)\n", len(req.JksFile))
+	} else {
+		fmt.Printf("[DEBUG] Request received without JKS file\n")
+	}
 	response, err := s.app.ExecuteRequest(&req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")

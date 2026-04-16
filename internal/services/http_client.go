@@ -452,10 +452,12 @@ func (hc *HTTPClient) buildClient(req *models.Request) (*http.Client, func(), er
 
 	if req.JksFile != "" {
 		// JKS takes priority over separate cert+key files
+		fmt.Printf("[DEBUG] Loading JKS file (size: %d bytes)\n", len(req.JksFile))
 		cert, err := hc.LoadJKSFromBase64(req.JksFile, req.JksPassword)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load JKS keystore: %w", err)
 		}
+		fmt.Printf("[DEBUG] Successfully loaded JKS certificate\n")
 		clientCerts = []tls.Certificate{cert}
 	} else if req.CertificateFile != "" && req.KeyFile != "" {
 		cert, cleanup, err := hc.loadClientCertificateFromBase64(req.CertificateFile, req.KeyFile)
