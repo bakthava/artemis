@@ -1017,6 +1017,7 @@ function SettingsModal({ isOpen, onClose }) {
                         <div><strong>URL:</strong> {mtlsServer.url}</div>
                         <div><strong>JKS Password:</strong> {mtlsServer.jksPassword}</div>
                         <div><strong>Client:</strong> {mtlsServer.clientSubject}</div>
+                        {mtlsServer.certDir && <div><strong>Certificates Saved To:</strong> {mtlsServer.certDir}/</div>}
                       </div>
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#166534' }}>
                         JKS has been auto-imported above. Send a request to {mtlsServer.url} with SSL verification disabled.

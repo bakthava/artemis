@@ -12,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
@@ -445,6 +446,51 @@ func (a *App) StartMTLSTestServer(port int) (map[string]interface{}, error) {
 	// Parse client cert for info
 	clientParsed, _ := x509.ParseCertificate(clientCertDER)
 
+	// Save certificates to disk
+	certDir := "certs"
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create cert directory: %v\n", err)
+	} else {
+		// Save CA certificate
+		caCertPEM := &strings.Builder{}
+		pem.Encode(caCertPEM, &pem.Block{Type: "CERTIFICATE", Bytes: caCertDER})
+		os.WriteFile(filepath.Join(certDir, "ca.crt"), []byte(caCertPEM.String()), 0644)
+
+		// Save server certificate
+		serverCertPEM := &strings.Builder{}
+		pem.Encode(serverCertPEM, &pem.Block{Type: "CERTIFICATE", Bytes: serverCertDER})
+		os.WriteFile(filepath.Join(certDir, "server.crt"), []byte(serverCertPEM.String()), 0644)
+
+		// Save server key
+		serverKeyBytes, _ := x509.MarshalPKCS8PrivateKey(serverKey)
+		serverKeyPEM := &strings.Builder{}
+		pem.Encode(serverKeyPEM, &pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyBytes})
+		os.WriteFile(filepath.Join(certDir, "server.key"), []byte(serverKeyPEM.String()), 0600)
+
+		// Save client certificate
+		clientCertPEM := &strings.Builder{}
+		pem.Encode(clientCertPEM, &pem.Block{Type: "CERTIFICATE", Bytes: clientCertDER})
+		os.WriteFile(filepath.Join(certDir, "client.crt"), []byte(clientCertPEM.String()), 0644)
+
+		// Save client key
+		clientKeyBytes, _ := x509.MarshalPKCS8PrivateKey(clientKey)
+		clientKeyPEM := &strings.Builder{}
+		pem.Encode(clientKeyPEM, &pem.Block{Type: "PRIVATE KEY", Bytes: clientKeyBytes})
+		os.WriteFile(filepath.Join(certDir, "client.key"), []byte(clientKeyPEM.String()), 0600)
+
+		// Save JKS file
+		jksFile, _ := os.Create(filepath.Join(certDir, "client.jks"))
+		defer jksFile.Close()
+		jksDecoded, _ := base64.StdEncoding.DecodeString(jksBuf.String())
+		jksFile.Write(jksDecoded)
+
+		// Save password info
+		readmeContent := fmt.Sprintf("# mTLS Test Certificates\n\nGenerated: %s\n\nJKS Password: %s\n\nFiles:\n- ca.crt: CA certificate\n- server.crt: Server certificate\n- server.key: Server private key\n- client.crt: Client certificate\n- client.key: Client private key\n- client.jks: Java KeyStore with client cert\n", time.Now().Format(time.RFC3339), jksPassword)
+		os.WriteFile(filepath.Join(certDir, "README.txt"), []byte(readmeContent), 0644)
+
+		fmt.Printf("✓ Certificates saved to %s/\n", certDir)
+	}
+
 	return map[string]interface{}{
 		"url":         fmt.Sprintf("https://localhost:%d", port),
 		"port":        port,
@@ -452,6 +498,7 @@ func (a *App) StartMTLSTestServer(port int) (map[string]interface{}, error) {
 		"jksPassword": jksPassword,
 		"clientSubject": clientParsed.Subject.String(),
 		"clientNotAfter": clientParsed.NotAfter.Format(time.RFC3339),
+		"certDir":     certDir,
 	}, nil
 }
 
