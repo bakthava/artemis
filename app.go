@@ -36,18 +36,18 @@ type Config struct {
 
 // App struct
 type App struct {
-	ctx                    context.Context
-	config                 *Config
-	database               *db.DB
-	collectionRepository   *db.CollectionRepository
-	environmentRepository  *db.EnvironmentRepository
-	historyRepository      *db.HistoryRepository
-	flowRepository         *db.FlowRepository
-	httpClient             *services.HTTPClient
-	grpcClient             *services.GRPCClient
-	protoFileManager       *services.ProtoFileManager
-	descriptorLoader       *services.DescriptorLoader
-	mtlsTestServer         *http.Server
+	ctx                   context.Context
+	config                *Config
+	database              *db.DB
+	collectionRepository  *db.CollectionRepository
+	environmentRepository *db.EnvironmentRepository
+	historyRepository     *db.HistoryRepository
+	flowRepository        *db.FlowRepository
+	httpClient            *services.HTTPClient
+	grpcClient            *services.GRPCClient
+	protoFileManager      *services.ProtoFileManager
+	descriptorLoader      *services.DescriptorLoader
+	mtlsTestServer        *http.Server
 }
 
 // NewApp creates a new App application struct
@@ -492,13 +492,13 @@ func (a *App) StartMTLSTestServer(port int) (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"url":         fmt.Sprintf("https://localhost:%d", port),
-		"port":        port,
-		"jksBase64":   jksBuf.String(),
-		"jksPassword": jksPassword,
-		"clientSubject": clientParsed.Subject.String(),
+		"url":            fmt.Sprintf("https://localhost:%d", port),
+		"port":           port,
+		"jksBase64":      jksBuf.String(),
+		"jksPassword":    jksPassword,
+		"clientSubject":  clientParsed.Subject.String(),
 		"clientNotAfter": clientParsed.NotAfter.Format(time.RFC3339),
-		"certDir":     certDir,
+		"certDir":        certDir,
 	}, nil
 }
 

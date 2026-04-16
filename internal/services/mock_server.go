@@ -221,13 +221,19 @@ func (m *MockHTTPServer) serveHTTPS(listener net.Listener) error {
 func (m *MockHTTPServer) handleHTTPConnection(conn net.Conn) {
 	defer conn.Close()
 
+	// Read the incoming request before responding
+	buf := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	conn.Read(buf)
+
 	// Simple HTTP response
+	body := `{"status":"ok","message":"Mock HTTP Server Response","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`
 	response := "HTTP/1.1 200 OK\r\n"
 	response += "Content-Type: application/json\r\n"
-	response += "Content-Length: 95\r\n"
+	response += fmt.Sprintf("Content-Length: %d\r\n", len(body))
 	response += "Connection: close\r\n"
 	response += "\r\n"
-	response += `{"status":"ok","message":"Mock HTTP Server Response","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`
+	response += body
 
 	fmt.Fprint(conn, response)
 }

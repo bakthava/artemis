@@ -54,12 +54,14 @@ const initialState = {
     messageFormat: 'JSON',  // JSON or BINARY
     metadata: {},
     callType: 'unary',  // unary, server_stream, client_stream, bidirectional_stream
+    useTLS: false,
     useServerCipherSuite: false,
     disabledTLSProtocols: [],
     cipherSuites: [],
     certificateFile: null,
     keyFile: null,
     caCertFile: null,
+    protoContent: '',
   },
 };
 

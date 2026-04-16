@@ -73,6 +73,9 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("POST /api/certificates/mtls-server/start", s.handleStartMTLSServer)
 	s.router.HandleFunc("POST /api/certificates/mtls-server/stop", s.handleStopMTLSServer)
 
+	// Proto file parsing endpoint
+	s.router.HandleFunc("POST /api/proto/parse", s.handleParseProto)
+
 	// Serve frontend (SPA fallback to index.html)
 	s.router.HandleFunc("/", s.handleStatic)
 }
@@ -456,6 +459,31 @@ func (s *HTTPServer) handleStopMTLSServer(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func (s *HTTPServer) handleParseProto(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Content  string `json:"content"`
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Content == "" {
+		http.Error(w, `{"error":"content is required"}`, http.StatusBadRequest)
+		return
+	}
+	protoFile, err := s.app.descriptorLoader.ParseProtoContent(req.Filename, req.Content)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(protoFile)
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

@@ -2,11 +2,16 @@ package services
 
 import (
 	"artemis/internal/models"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	keystore "github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
 // TestHTTPClient tests HTTP client functionality
@@ -767,4 +772,292 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// readFileAsBase64 reads a file and returns its content as base64-encoded string
+func readFileAsBase64(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read file %s: %v", path, err)
+	}
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+// buildTestJKS creates a JKS keystore from PEM cert and key files for testing
+func buildTestJKS(t *testing.T, certPath, keyPath, jksPath, password string) error {
+	t.Helper()
+
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("read cert: %w", err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("read key: %w", err)
+	}
+
+	// Parse certificate
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
+		return fmt.Errorf("failed to decode cert PEM")
+	}
+
+	// Parse private key
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return fmt.Errorf("failed to decode key PEM")
+	}
+
+	// Marshal key to PKCS8
+	privKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		// Try PKCS1 and re-marshal to PKCS8
+		rsaKey, err2 := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+		if err2 != nil {
+			return fmt.Errorf("parse private key: %w (also tried PKCS1: %v)", err, err2)
+		}
+		keyBlock.Bytes, err = x509.MarshalPKCS8PrivateKey(rsaKey)
+		if err != nil {
+			return fmt.Errorf("marshal to PKCS8: %w", err)
+		}
+		_ = privKey // suppress unused warning
+	}
+
+	ks := keystore.New()
+	entry := keystore.PrivateKeyEntry{
+		CreationTime: time.Now(),
+		PrivateKey:   keyBlock.Bytes,
+		CertificateChain: []keystore.Certificate{
+			{
+				Type:    "X.509",
+				Content: certBlock.Bytes,
+			},
+		},
+	}
+	if err := ks.SetPrivateKeyEntry("client", entry, []byte(password)); err != nil {
+		return fmt.Errorf("set private key entry: %w", err)
+	}
+
+	f, err := os.Create(jksPath)
+	if err != nil {
+		return fmt.Errorf("create JKS file: %w", err)
+	}
+	defer f.Close()
+
+	if err := ks.Store(f, []byte(password)); err != nil {
+		return fmt.Errorf("store JKS: %w", err)
+	}
+
+	return nil
+}
+
+// TestHTTPS_MutualTLS_Success tests 2-way SSL where client provides a valid certificate
+func TestHTTPS_MutualTLS_Success(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "artemis-mtls-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	certGen := NewTestCertificateGenerator(tmpDir)
+
+	// Generate CA
+	caCertPath, caCert, caKey, err := certGen.GenerateCA("Artemis-Test-CA")
+	if err != nil {
+		t.Fatalf("Failed to generate CA: %v", err)
+	}
+
+	// Generate server cert signed by CA
+	serverCertPath := filepath.Join(tmpDir, "server-cert.pem")
+	serverKeyPath := filepath.Join(tmpDir, "server-key.pem")
+	_, err = certGen.GenerateCASignedCert("localhost", caCert, caKey, true, serverCertPath, serverKeyPath)
+	if err != nil {
+		t.Fatalf("Failed to generate server certificate: %v", err)
+	}
+
+	// Generate client cert signed by same CA
+	clientCertPath := filepath.Join(tmpDir, "client-cert.pem")
+	clientKeyPath := filepath.Join(tmpDir, "client-key.pem")
+	_, err = certGen.GenerateCASignedCert("test-client", caCert, caKey, false, clientCertPath, clientKeyPath)
+	if err != nil {
+		t.Fatalf("Failed to generate client certificate: %v", err)
+	}
+
+	// Build mTLS server config: server requires client cert signed by CA
+	serverTLSConfig, err := certGen.BuildMutualTLSServerConfig(serverCertPath, serverKeyPath, caCertPath)
+	if err != nil {
+		t.Fatalf("Failed to build mTLS server config: %v", err)
+	}
+
+	// Start HTTPS server with mTLS
+	testServer := NewSimpleTestServer(9030, 9031, 9032)
+	if err := testServer.StartHTTPS(serverTLSConfig); err != nil {
+		t.Fatalf("Failed to start mTLS HTTPS server: %v", err)
+	}
+	defer testServer.StopAll()
+
+	client := NewHTTPClient()
+
+	// Client provides cert+key (base64 encoded as the real frontend does)
+	req := &models.Request{
+		ID:              "mtls-test-1",
+		Name:            "Test mTLS Success",
+		Type:            models.RequestTypeHTTP,
+		Method:          "GET",
+		URL:             "https://" + testServer.GetHTTPSAddr() + "/api/secure",
+		VerifySSL:       false, // Self-signed CA, skip server verification in test
+		CertificateFile: readFileAsBase64(t, clientCertPath),
+		KeyFile:         readFileAsBase64(t, clientKeyPath),
+		Timeout:         10,
+	}
+
+	resp, err := client.ExecuteRequest(req)
+	if err != nil {
+		t.Fatalf("mTLS request failed unexpectedly: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	t.Logf("✓ mTLS 2-way SSL successful. Status: %d, Time: %dms", resp.StatusCode, resp.Time)
+}
+
+// TestHTTPS_MutualTLS_NoClientCert tests that mTLS server rejects a client without a certificate
+func TestHTTPS_MutualTLS_NoClientCert(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "artemis-mtls-nocert-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	certGen := NewTestCertificateGenerator(tmpDir)
+
+	// Generate CA
+	caCertPath, caCert, caKey, err := certGen.GenerateCA("Artemis-Test-CA")
+	if err != nil {
+		t.Fatalf("Failed to generate CA: %v", err)
+	}
+
+	// Generate server cert signed by CA
+	serverCertPath := filepath.Join(tmpDir, "server-cert.pem")
+	serverKeyPath := filepath.Join(tmpDir, "server-key.pem")
+	_, err = certGen.GenerateCASignedCert("localhost", caCert, caKey, true, serverCertPath, serverKeyPath)
+	if err != nil {
+		t.Fatalf("Failed to generate server certificate: %v", err)
+	}
+
+	// Build mTLS server config
+	serverTLSConfig, err := certGen.BuildMutualTLSServerConfig(serverCertPath, serverKeyPath, caCertPath)
+	if err != nil {
+		t.Fatalf("Failed to build mTLS server config: %v", err)
+	}
+
+	// Start HTTPS server with mTLS
+	testServer := NewSimpleTestServer(9033, 9034, 9035)
+	if err := testServer.StartHTTPS(serverTLSConfig); err != nil {
+		t.Fatalf("Failed to start mTLS HTTPS server: %v", err)
+	}
+	defer testServer.StopAll()
+
+	client := NewHTTPClient()
+
+	// Client does NOT provide any certificate
+	req := &models.Request{
+		ID:        "mtls-test-2",
+		Name:      "Test mTLS No Client Cert",
+		Type:      models.RequestTypeHTTP,
+		Method:    "GET",
+		URL:       "https://" + testServer.GetHTTPSAddr() + "/api/secure",
+		VerifySSL: false,
+		Timeout:   10,
+	}
+
+	_, err = client.ExecuteRequest(req)
+	if err == nil {
+		t.Fatal("Expected mTLS to fail without client certificate, but it succeeded")
+	}
+
+	t.Logf("✓ mTLS correctly rejected client without certificate: %v", err)
+}
+
+// TestHTTPS_MutualTLS_WithJKS tests 2-way SSL using a JKS keystore for the client certificate
+func TestHTTPS_MutualTLS_WithJKS(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "artemis-mtls-jks-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	certGen := NewTestCertificateGenerator(tmpDir)
+
+	// Generate CA
+	caCertPath, caCert, caKey, err := certGen.GenerateCA("Artemis-Test-CA")
+	if err != nil {
+		t.Fatalf("Failed to generate CA: %v", err)
+	}
+
+	// Generate server cert signed by CA
+	serverCertPath := filepath.Join(tmpDir, "server-cert.pem")
+	serverKeyPath := filepath.Join(tmpDir, "server-key.pem")
+	_, err = certGen.GenerateCASignedCert("localhost", caCert, caKey, true, serverCertPath, serverKeyPath)
+	if err != nil {
+		t.Fatalf("Failed to generate server certificate: %v", err)
+	}
+
+	// Generate client cert signed by same CA
+	clientCertPath := filepath.Join(tmpDir, "client-cert.pem")
+	clientKeyPath := filepath.Join(tmpDir, "client-key.pem")
+	_, err = certGen.GenerateCASignedCert("test-client", caCert, caKey, false, clientCertPath, clientKeyPath)
+	if err != nil {
+		t.Fatalf("Failed to generate client certificate: %v", err)
+	}
+
+	// Build a JKS keystore from the client cert+key
+	jksPath := filepath.Join(tmpDir, "client.jks")
+	jksPassword := "testpass123"
+	err = buildTestJKS(t, clientCertPath, clientKeyPath, jksPath, jksPassword)
+	if err != nil {
+		t.Fatalf("Failed to build test JKS: %v", err)
+	}
+
+	// Build mTLS server config
+	serverTLSConfig, err := certGen.BuildMutualTLSServerConfig(serverCertPath, serverKeyPath, caCertPath)
+	if err != nil {
+		t.Fatalf("Failed to build mTLS server config: %v", err)
+	}
+
+	// Start HTTPS server with mTLS
+	testServer := NewSimpleTestServer(9036, 9037, 9038)
+	if err := testServer.StartHTTPS(serverTLSConfig); err != nil {
+		t.Fatalf("Failed to start mTLS HTTPS server: %v", err)
+	}
+	defer testServer.StopAll()
+
+	client := NewHTTPClient()
+
+	// Client provides JKS file (base64 encoded)
+	req := &models.Request{
+		ID:          "mtls-jks-test-1",
+		Name:        "Test mTLS with JKS",
+		Type:        models.RequestTypeHTTP,
+		Method:      "GET",
+		URL:         "https://" + testServer.GetHTTPSAddr() + "/api/secure",
+		VerifySSL:   false,
+		JksFile:     readFileAsBase64(t, jksPath),
+		JksPassword: jksPassword,
+		Timeout:     10,
+	}
+
+	resp, err := client.ExecuteRequest(req)
+	if err != nil {
+		t.Fatalf("mTLS with JKS request failed: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	t.Logf("✓ mTLS 2-way SSL with JKS keystore successful. Status: %d, Time: %dms", resp.StatusCode, resp.Time)
 }

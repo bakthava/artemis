@@ -182,6 +182,29 @@ func (tcg *TestCertificateGenerator) BuildServerTLSConfig(certPath, keyPath stri
 	}, nil
 }
 
+// BuildMutualTLSServerConfig builds a TLS config for server that requires client certificates (mTLS)
+func (tcg *TestCertificateGenerator) BuildMutualTLSServerConfig(certPath, keyPath, clientCACertPath string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server certificate pair: %w", err)
+	}
+
+	clientCAPool := x509.NewCertPool()
+	clientCACert, err := os.ReadFile(clientCACertPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client CA cert: %w", err)
+	}
+	if !clientCAPool.AppendCertsFromPEM(clientCACert) {
+		return nil, fmt.Errorf("failed to parse client CA certificate")
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCAPool,
+	}, nil
+}
+
 // BuildClientTLSConfig builds a TLS config for client
 func (tcg *TestCertificateGenerator) BuildClientTLSConfig(certPath, keyPath, caCertPath string) (*tls.Config, error) {
 	// Load client certificate if provided
@@ -226,4 +249,110 @@ func (tcg *TestCertificateGenerator) CleanUp(files ...string) error {
 		}
 	}
 	return nil
+}
+
+// GenerateCASignedCert generates a certificate signed by the given CA
+func (tcg *TestCertificateGenerator) GenerateCASignedCert(commonName string, caCert *x509.Certificate, caKey *rsa.PrivateKey, isServer bool, certFile, keyFile string) (*tls.Certificate, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate private key: %w", err)
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	extKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+	if isServer {
+		extKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{"Artemis Test"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           extKeyUsage,
+		BasicConstraintsValid: true,
+	}
+	if isServer {
+		template.IPAddresses = []net.IP{net.ParseIP("127.0.0.1")}
+		template.DNSNames = []string{commonName, "localhost", "127.0.0.1"}
+	}
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert, &privateKey.PublicKey, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create certificate: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+
+	if certFile != "" {
+		if err := os.WriteFile(certFile, certPEM, 0600); err != nil {
+			return nil, fmt.Errorf("failed to write cert file: %w", err)
+		}
+	}
+	if keyFile != "" {
+		if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
+			return nil, fmt.Errorf("failed to write key file: %w", err)
+		}
+	}
+
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate pair: %w", err)
+	}
+
+	return &cert, nil
+}
+
+// GenerateCA generates a CA certificate and returns the x509 cert + private key for signing
+func (tcg *TestCertificateGenerator) GenerateCA(commonName string) (caCertPath string, caCert *x509.Certificate, caKey *rsa.PrivateKey, err error) {
+	caKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to generate CA private key: %w", err)
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	caTemplate := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{"Artemis Test CA"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            2,
+	}
+
+	caCertBytes, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to create CA certificate: %w", err)
+	}
+
+	caCert, err = x509.ParseCertificate(caCertBytes)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertBytes})
+	caCertPath = filepath.Join(tcg.tmpDir, commonName+"-ca.pem")
+	if err := os.WriteFile(caCertPath, certPEM, 0600); err != nil {
+		return "", nil, nil, fmt.Errorf("failed to write CA cert file: %w", err)
+	}
+
+	return caCertPath, caCert, caKey, nil
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
 import api from '../services/api';
@@ -7,6 +7,64 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
   const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest, setRequestType, setGRPCConfig } = useRequest();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('params');
+  const [protoServices, setProtoServices] = useState([]);
+  const [protoLoading, setProtoLoading] = useState(false);
+  const protoFileInputRef = useRef(null);
+
+  // Re-populate service/method dropdowns when protoContent is already loaded (e.g. after save/restore)
+  useEffect(() => {
+    if (request.requestType === 'GRPC' && request.grpcConfig?.protoContent && protoServices.length === 0) {
+      api.proto.parse(request.grpcConfig.protoContent, request.grpcConfig.protoPath || 'proto')
+        .then(result => {
+          setProtoServices(buildServicesList(result));
+        })
+        .catch(() => {});
+    }
+  }, [request.requestType, request.grpcConfig?.protoContent]);
+
+  const buildServicesList = (protoFile) => {
+    return (protoFile.services || []).map(svc => ({
+      name: svc.name,
+      fullName: protoFile.packageName ? `${protoFile.packageName}.${svc.name}` : svc.name,
+      methods: svc.methods || [],
+    }));
+  };
+
+  const handleProtoBrowse = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const content = await file.text();
+    setGRPCConfig({ protoPath: file.name, protoContent: content });  // store content for execution
+    try {
+      setProtoLoading(true);
+      const result = await api.proto.parse(content, file.name);
+      const services = buildServicesList(result);
+      setProtoServices(services);
+      if (services.length === 1) {
+        setGRPCConfig({ service: services[0].fullName });
+      }
+    } catch (err) {
+      showToast(`Failed to parse proto: ${err.message}`, 'error');
+      setProtoServices([]);
+    } finally {
+      setProtoLoading(false);
+      e.target.value = '';  // allow re-selecting same file
+    }
+  };
+
+  const handleMethodSelect = (methodName) => {
+    const svc = protoServices.find(s => s.fullName === request.grpcConfig?.service);
+    const method = svc?.methods?.find(m => m.name === methodName);
+    let callType = 'unary';
+    if (method?.isClientStream && method?.isServerStream) callType = 'bidirectional_stream';
+    else if (method?.isServerStream) callType = 'server_stream';
+    else if (method?.isClientStream) callType = 'client_stream';
+    setGRPCConfig({ method: methodName, callType });
+  };
+
+  const currentServiceMethods = protoServices.find(
+    s => s.fullName === request.grpcConfig?.service
+  )?.methods || [];
 
   const handleSend = async () => {
     // Check required fields based on request type
@@ -36,18 +94,23 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
       if (request.requestType === 'GRPC') {
         // gRPC request
         response = await api.request.executeGRPC({
+          type: 'GRPC',
           url: request.url,
-          service: request.grpcConfig.service,
-          method: request.grpcConfig.method,
-          protoPath: request.grpcConfig.protoPath,
-          messageFormat: request.grpcConfig.messageFormat,
-          metadata: request.grpcConfig.metadata,
           body: request.body,
-          callType: request.grpcConfig.callType,
           timeout: request.timeout,
-          certificateFile: request.grpcConfig.certificateFile,
-          keyFile: request.grpcConfig.keyFile,
-          caCertFile: request.grpcConfig.caCertFile,
+          grpcConfig: {
+            service: request.grpcConfig.service,
+            method: request.grpcConfig.method,
+            protoPath: request.grpcConfig.protoPath,
+            protoContent: request.grpcConfig.protoContent,
+            messageFormat: request.grpcConfig.messageFormat,
+            metadata: request.grpcConfig.metadata,
+            callType: request.grpcConfig.callType,
+            useTLS: request.grpcConfig.useTLS,
+            certificateFile: request.grpcConfig.certificateFile,
+            keyFile: request.grpcConfig.keyFile,
+            caCertFile: request.grpcConfig.caCertFile,
+          },
         });
       } else {
         // HTTP request
@@ -317,26 +380,105 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
         {/* gRPC Config Tab */}
         {request.requestType === 'GRPC' && activeTab === 'grpc-config' && (
           <div>
+            {/* Proto File */}
+            <div className="form-group">
+              <label className="form-label">Proto File</label>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="/full/path/to/service.proto  (or browse →)"
+                  value={request.grpcConfig?.protoPath || ''}
+                  onChange={(e) => {
+                    setGRPCConfig({ protoPath: e.target.value, protoContent: '' });
+                    setProtoServices([]);
+                  }}
+                />
+                <button
+                  className="btn btn-secondary"
+                  style={{ whiteSpace: 'nowrap', padding: '4px 10px' }}
+                  onClick={() => protoFileInputRef.current?.click()}
+                  title="Browse for .proto file"
+                >
+                  Browse
+                </button>
+                <input
+                  type="file"
+                  accept=".proto"
+                  ref={protoFileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={handleProtoBrowse}
+                />
+                {protoLoading && <span style={{ fontSize: '12px', color: '#888' }}>Parsing…</span>}
+              </div>
+              {request.grpcConfig?.protoContent && (
+                <div style={{ fontSize: '11px', color: '#4caf50', marginTop: '3px' }}>
+                  ✓ Proto uploaded — services and methods loaded below
+                </div>
+              )}
+            </div>
+
+            {/* Service */}
             <div className="form-group">
               <label className="form-label">Service</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g., artemistest.Greeter"
-                value={request.grpcConfig?.service || ''}
-                onChange={(e) => setGRPCConfig({ service: e.target.value })}
-              />
+              {protoServices.length > 0 ? (
+                <select
+                  className="form-input"
+                  value={request.grpcConfig?.service || ''}
+                  onChange={(e) => setGRPCConfig({ service: e.target.value, method: '' })}
+                >
+                  <option value="">-- Select Service --</option>
+                  {protoServices.map(svc => (
+                    <option key={svc.fullName} value={svc.fullName}>
+                      {svc.name} ({svc.fullName})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., main.Greeter"
+                  value={request.grpcConfig?.service || ''}
+                  onChange={(e) => setGRPCConfig({ service: e.target.value })}
+                />
+              )}
             </div>
+
+            {/* Method */}
             <div className="form-group">
               <label className="form-label">Method</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g., SayHello"
-                value={request.grpcConfig?.method || ''}
-                onChange={(e) => setGRPCConfig({ method: e.target.value })}
-              />
+              {currentServiceMethods.length > 0 ? (
+                <select
+                  className="form-input"
+                  value={request.grpcConfig?.method || ''}
+                  onChange={(e) => handleMethodSelect(e.target.value)}
+                >
+                  <option value="">-- Select Method --</option>
+                  {currentServiceMethods.map(m => {
+                    const type = (m.isClientStream && m.isServerStream) ? 'bidirectional'
+                      : m.isServerStream ? 'server stream'
+                      : m.isClientStream ? 'client stream'
+                      : 'unary';
+                    return (
+                      <option key={m.name} value={m.name}>
+                        {m.name}  [{type}]  {m.inputType} → {m.outputType}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., SayHello"
+                  value={request.grpcConfig?.method || ''}
+                  onChange={(e) => setGRPCConfig({ method: e.target.value })}
+                />
+              )}
             </div>
+
+            {/* Call Type */}
             <div className="form-group">
               <label className="form-label">Call Type</label>
               <select
@@ -350,15 +492,20 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
                 <option value="bidirectional_stream">Bidirectional</option>
               </select>
             </div>
+
+            {/* TLS toggle */}
             <div className="form-group">
-              <label className="form-label">Proto File Path</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="/path/to/proto/file.proto"
-                value={request.grpcConfig?.protoPath || ''}
-                onChange={(e) => setGRPCConfig({ protoPath: e.target.value })}
-              />
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={request.grpcConfig?.useTLS || false}
+                  onChange={(e) => setGRPCConfig({ useTLS: e.target.checked })}
+                />
+                Use TLS
+              </label>
+              <div className="form-hint" style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                Enable for TLS/mTLS connections. Leave unchecked for plaintext (e.g. port 50051).
+              </div>
             </div>
           </div>
         )}

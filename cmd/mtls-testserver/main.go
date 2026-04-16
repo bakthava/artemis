@@ -23,9 +23,9 @@ import (
 )
 
 const (
-	defaultPort    = 8443
-	jksPassword    = "artemis123"
-	outputDir      = "testcerts"
+	defaultPort = 8443
+	jksPassword = "artemis123"
+	outputDir   = "testcerts"
 )
 
 func main() {

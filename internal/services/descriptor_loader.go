@@ -232,10 +232,12 @@ func (dl *DescriptorLoader) CompileProtoFile(protoPath string) ([]byte, error) {
 	tmpDescriptorFile := filepath.Join(os.TempDir(), "descriptor_"+strings.TrimSuffix(filepath.Base(protoPath), ".proto")+".pb")
 	defer os.Remove(tmpDescriptorFile)
 
-	// Compile proto file to descriptor set
+	// Compile proto file to descriptor set (include_imports ensures all dependencies
+	// are embedded so protodesc.NewFiles can resolve the full type graph)
 	cmd = exec.Command(
 		"protoc",
 		"--proto_path="+protoDir,
+		"--include_imports",
 		"--descriptor_set_out="+tmpDescriptorFile,
 		protoPath,
 	)
@@ -277,4 +279,13 @@ func (dl *DescriptorLoader) ClearCache() {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 	dl.descriptorCache = make(map[string]*descriptorpb.FileDescriptorProto)
+}
+
+// ParseProtoContent parses .proto file content (without requiring protoc) and
+// returns the services/methods defined in it. Suitable for service discovery UI.
+func (dl *DescriptorLoader) ParseProtoContent(filename, content string) (*models.ProtoFile, error) {
+	if filename == "" {
+		filename = "proto"
+	}
+	return dl.parseProtoFile(filename, content)
 }

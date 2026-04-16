@@ -19,6 +19,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
@@ -32,6 +35,75 @@ func NewGRPCClient() *GRPCClient {
 	return &GRPCClient{
 		descriptorLoader: NewDescriptorLoader(),
 	}
+}
+
+// methodDescriptors holds the input and output message descriptors for a gRPC method.
+type methodDescriptors struct {
+	input  protoreflect.MessageDescriptor
+	output protoreflect.MessageDescriptor
+}
+
+// loadMethodDescriptors compiles the .proto file with protoc (--include_imports) and
+// returns the input/output message descriptors for the named service method.
+// Requires protoc to be installed and on PATH.
+// If protoContent is non-empty the content is written to a temp file and used for compilation.
+func (gc *GRPCClient) loadMethodDescriptors(protoPath, protoContent, serviceName, methodName string) (*methodDescriptors, error) {
+	if protoContent != "" {
+		// Write supplied content to a temp .proto file so protoc can compile it
+		tmpFile, err := os.CreateTemp("", "artemis-*.proto")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temp proto file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+		if _, err := tmpFile.WriteString(protoContent); err != nil {
+			tmpFile.Close()
+			return nil, fmt.Errorf("failed to write temp proto file: %w", err)
+		}
+		tmpFile.Close()
+		protoPath = tmpFile.Name()
+	}
+	descriptorBytes, err := gc.descriptorLoader.CompileProtoFile(protoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var fds descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(descriptorBytes, &fds); err != nil {
+		return nil, fmt.Errorf("failed to parse descriptor set: %w", err)
+	}
+
+	files, err := protodesc.NewFiles(&fds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build file registry: %w", err)
+	}
+
+	// Strip package prefix to get the short service name
+	shortService := serviceName
+	if idx := strings.LastIndex(serviceName, "."); idx >= 0 {
+		shortService = serviceName[idx+1:]
+	}
+
+	var found *methodDescriptors
+	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		svcDesc := fd.Services().ByName(protoreflect.Name(shortService))
+		if svcDesc == nil {
+			return true
+		}
+		mDesc := svcDesc.Methods().ByName(protoreflect.Name(methodName))
+		if mDesc == nil {
+			return true
+		}
+		found = &methodDescriptors{
+			input:  mDesc.Input(),
+			output: mDesc.Output(),
+		}
+		return false
+	})
+
+	if found == nil {
+		return nil, fmt.Errorf("method %s/%s not found in proto file", serviceName, methodName)
+	}
+	return found, nil
 }
 
 // ExecuteRequest executes a gRPC request and returns the response
@@ -109,46 +181,33 @@ func (gc *GRPCClient) executeUnary(conn *grpc.ClientConn, request *models.Reques
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(request.Timeout)*time.Second)
 	defer cancel()
 
-	// Add metadata to context
 	if request.GRPCConfig.Metadata != nil && len(request.GRPCConfig.Metadata) > 0 {
 		md := metadata.New(request.GRPCConfig.Metadata)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
-	// Create dynamic message from request body
-	var requestMsg proto.Message
-	if strings.TrimSpace(request.Body) == "" || request.Body == "{}" {
-		// Empty message
-		requestMsg = &dynamicpb.Message{}
-	} else if request.GRPCConfig.MessageFormat == "BINARY" {
-		// Decode hex binary to bytes
-		decoded, err := hex.DecodeString(request.Body)
-		if err != nil {
-			return errorResponse(response, fmt.Sprintf("failed to decode hex binary: %v", err)), nil
-		}
-		// For now, treat as protobuf bytes
-		requestMsg = &dynamicpb.Message{}
-		if err := proto.Unmarshal(decoded, requestMsg); err != nil {
-			// Fallback: wrap as string
-			requestMsg = &dynamicpb.Message{}
-		}
-	} else {
-		// JSON format
-		var msgData interface{}
-		if err := json.Unmarshal([]byte(request.Body), &msgData); err != nil {
-			return errorResponse(response, fmt.Sprintf("failed to parse request message JSON: %v", err)), nil
-		}
-		// Convert to proto message (simplified - full implementation would use descriptor reflection)
-		requestMsg = &dynamicpb.Message{}
+	if request.GRPCConfig.ProtoPath == "" && request.GRPCConfig.ProtoContent == "" {
+		return errorResponse(response, "proto file path or uploaded content is required for gRPC execution"), nil
 	}
 
+	descs, err := gc.loadMethodDescriptors(request.GRPCConfig.ProtoPath, request.GRPCConfig.ProtoContent, request.GRPCConfig.Service, request.GRPCConfig.Method)
+	if err != nil {
+		return errorResponse(response, fmt.Sprintf("failed to load proto descriptors: %v", err)), nil
+	}
+
+	reqMsg := dynamicpb.NewMessage(descs.input)
+	body := strings.TrimSpace(request.Body)
+	if body != "" && body != "{}" {
+		if err := protojson.Unmarshal([]byte(body), reqMsg); err != nil {
+			return errorResponse(response, fmt.Sprintf("failed to parse request body as JSON: %v", err)), nil
+		}
+	}
+
+	rspMsg := dynamicpb.NewMessage(descs.output)
 	fullMethodName := fmt.Sprintf("/%s/%s", request.GRPCConfig.Service, request.GRPCConfig.Method)
 
-	// Invoke unary RPC using generic call
-	var responseMsg interface{}
 	var trailers metadata.MD
-	err := conn.Invoke(ctx, fullMethodName, requestMsg, &responseMsg, grpc.Trailer(&trailers))
-
+	err = conn.Invoke(ctx, fullMethodName, reqMsg, rspMsg, grpc.Trailer(&trailers))
 	endTime := time.Since(startTime).Milliseconds()
 	response.Time = endTime
 
@@ -156,17 +215,13 @@ func (gc *GRPCClient) executeUnary(conn *grpc.ClientConn, request *models.Reques
 		return errorResponse(response, fmt.Sprintf("gRPC call failed: %v", err)), nil
 	}
 
-	// Extract trailers/metadata
 	gc.extractMetadata(trailers, response)
 
-	// Set response body
-	if responseMsg != nil {
-		body, err := json.MarshalIndent(responseMsg, "", "  ")
-		if err != nil {
-			response.Body = fmt.Sprintf("%v", responseMsg)
-		} else {
-			response.Body = string(body)
-		}
+	jsonBytes, jerr := protojson.Marshal(rspMsg)
+	if jerr != nil {
+		response.Body = fmt.Sprintf("%v", rspMsg)
+	} else {
+		response.Body = string(jsonBytes)
 	}
 
 	response.StatusCode = 200
@@ -181,56 +236,62 @@ func (gc *GRPCClient) executeServerStreaming(conn *grpc.ClientConn, request *mod
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(request.Timeout)*time.Second)
 	defer cancel()
 
-	// Add metadata to context
 	if request.GRPCConfig.Metadata != nil && len(request.GRPCConfig.Metadata) > 0 {
 		md := metadata.New(request.GRPCConfig.Metadata)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
+	if request.GRPCConfig.ProtoPath == "" && request.GRPCConfig.ProtoContent == "" {
+		return errorResponse(response, "proto file path or uploaded content is required for gRPC execution"), nil
+	}
+
+	descs, err := gc.loadMethodDescriptors(request.GRPCConfig.ProtoPath, request.GRPCConfig.ProtoContent, request.GRPCConfig.Service, request.GRPCConfig.Method)
+	if err != nil {
+		return errorResponse(response, fmt.Sprintf("failed to load proto descriptors: %v", err)), nil
+	}
+
+	reqMsg := dynamicpb.NewMessage(descs.input)
+	body := strings.TrimSpace(request.Body)
+	if body != "" && body != "{}" {
+		if err := protojson.Unmarshal([]byte(body), reqMsg); err != nil {
+			return errorResponse(response, fmt.Sprintf("failed to parse request body as JSON: %v", err)), nil
+		}
+	}
+
 	fullMethodName := fmt.Sprintf("/%s/%s", request.GRPCConfig.Service, request.GRPCConfig.Method)
 
-	// Create stream using generic call
 	stream, err := conn.NewStream(ctx, &grpc.StreamDesc{
-		StreamName: fullMethodName,
+		StreamName:    request.GRPCConfig.Method,
+		ServerStreams: true,
 	}, fullMethodName)
 	if err != nil {
 		return errorResponse(response, fmt.Sprintf("failed to create stream: %v", err)), nil
 	}
 
-	// Send request message
-	requestMsg := &dynamicpb.Message{}
-	if strings.TrimSpace(request.Body) != "" && request.Body != "{}" {
-		json.Unmarshal([]byte(request.Body), requestMsg)
-	}
-	if err := stream.SendMsg(requestMsg); err != nil {
+	if err := stream.SendMsg(reqMsg); err != nil {
 		return errorResponse(response, fmt.Sprintf("failed to send message: %v", err)), nil
 	}
+	stream.CloseSend()
 
-	// Receive streaming messages
-	var messages []interface{}
+	var messages []json.RawMessage
 	for {
-		var msg dynamicpb.Message
-		err := stream.RecvMsg(&msg)
+		rspMsg := dynamicpb.NewMessage(descs.output)
+		err := stream.RecvMsg(rspMsg)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return errorResponse(response, fmt.Sprintf("error receiving message: %v", err)), nil
 		}
-		messages = append(messages, msg)
+		jsonBytes, _ := protojson.Marshal(rspMsg)
+		messages = append(messages, json.RawMessage(jsonBytes))
 	}
 
 	endTime := time.Since(startTime).Milliseconds()
 	response.Time = endTime
 
-	// Set response body as JSON array
-	bodyBytes, err := json.MarshalIndent(messages, "", "  ")
-	if err != nil {
-		response.Body = fmt.Sprintf("%v", messages)
-	} else {
-		response.Body = string(bodyBytes)
-	}
-
+	bodyBytes, _ := json.MarshalIndent(messages, "", "  ")
+	response.Body = string(bodyBytes)
 	response.StatusCode = 200
 	response.Protocol = "gRPC"
 	response.ResponseTime = endTime
@@ -243,64 +304,58 @@ func (gc *GRPCClient) executeClientStreaming(conn *grpc.ClientConn, request *mod
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(request.Timeout)*time.Second)
 	defer cancel()
 
-	// Add metadata to context
 	if request.GRPCConfig.Metadata != nil && len(request.GRPCConfig.Metadata) > 0 {
 		md := metadata.New(request.GRPCConfig.Metadata)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
+	if request.GRPCConfig.ProtoPath == "" && request.GRPCConfig.ProtoContent == "" {
+		return errorResponse(response, "proto file path or uploaded content is required for gRPC execution"), nil
+	}
+
+	descs, err := gc.loadMethodDescriptors(request.GRPCConfig.ProtoPath, request.GRPCConfig.ProtoContent, request.GRPCConfig.Service, request.GRPCConfig.Method)
+	if err != nil {
+		return errorResponse(response, fmt.Sprintf("failed to load proto descriptors: %v", err)), nil
+	}
+
 	fullMethodName := fmt.Sprintf("/%s/%s", request.GRPCConfig.Service, request.GRPCConfig.Method)
 
-	// Create stream
 	stream, err := conn.NewStream(ctx, &grpc.StreamDesc{
-		StreamName: fullMethodName,
+		StreamName:    request.GRPCConfig.Method,
+		ClientStreams: true,
 	}, fullMethodName)
 	if err != nil {
 		return errorResponse(response, fmt.Sprintf("failed to create stream: %v", err)), nil
 	}
 
-	// Parse request body as JSON array of messages
-	var messages []interface{}
-	err = json.Unmarshal([]byte(request.Body), &messages)
-	if err != nil {
-		// If not array, treat as single message
-		var msg interface{}
-		if err := json.Unmarshal([]byte(request.Body), &msg); err != nil {
-			return errorResponse(response, fmt.Sprintf("failed to parse request messages: %v", err)), nil
-		}
-		messages = []interface{}{msg}
+	// Parse request body: JSON array of messages or a single message
+	var rawMessages []json.RawMessage
+	body := strings.TrimSpace(request.Body)
+	if err := json.Unmarshal([]byte(body), &rawMessages); err != nil {
+		rawMessages = []json.RawMessage{json.RawMessage(body)}
 	}
 
-	// Send all messages
-	for _, msg := range messages {
-		protoMsg := &dynamicpb.Message{}
-		if msgBytes, err := json.Marshal(msg); err == nil {
-			json.Unmarshal(msgBytes, protoMsg)
+	for _, raw := range rawMessages {
+		msg := dynamicpb.NewMessage(descs.input)
+		if err := protojson.Unmarshal([]byte(raw), msg); err != nil {
+			return errorResponse(response, fmt.Sprintf("failed to parse message: %v", err)), nil
 		}
-		if err := stream.SendMsg(protoMsg); err != nil {
+		if err := stream.SendMsg(msg); err != nil {
 			return errorResponse(response, fmt.Sprintf("failed to send message: %v", err)), nil
 		}
 	}
-
-	// Close send side
 	stream.CloseSend()
 
-	// Receive response
-	var responseMsg interface{}
-	err = stream.RecvMsg(&responseMsg)
-	if err != nil && err != io.EOF {
+	rspMsg := dynamicpb.NewMessage(descs.output)
+	if err := stream.RecvMsg(rspMsg); err != nil && err != io.EOF {
 		return errorResponse(response, fmt.Sprintf("failed to receive response: %v", err)), nil
 	}
 
 	endTime := time.Since(startTime).Milliseconds()
 	response.Time = endTime
 
-	// Set response body
-	if responseMsg != nil {
-		body, _ := json.MarshalIndent(responseMsg, "", "  ")
-		response.Body = string(body)
-	}
-
+	jsonBytes, _ := protojson.Marshal(rspMsg)
+	response.Body = string(jsonBytes)
 	response.StatusCode = 200
 	response.Protocol = "gRPC"
 	response.ResponseTime = endTime
@@ -313,66 +368,67 @@ func (gc *GRPCClient) executeBidirectionalStreaming(conn *grpc.ClientConn, reque
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(request.Timeout)*time.Second)
 	defer cancel()
 
-	// Add metadata to context
 	if request.GRPCConfig.Metadata != nil && len(request.GRPCConfig.Metadata) > 0 {
 		md := metadata.New(request.GRPCConfig.Metadata)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
+	if request.GRPCConfig.ProtoPath == "" && request.GRPCConfig.ProtoContent == "" {
+		return errorResponse(response, "proto file path or uploaded content is required for gRPC execution"), nil
+	}
+
+	descs, err := gc.loadMethodDescriptors(request.GRPCConfig.ProtoPath, request.GRPCConfig.ProtoContent, request.GRPCConfig.Service, request.GRPCConfig.Method)
+	if err != nil {
+		return errorResponse(response, fmt.Sprintf("failed to load proto descriptors: %v", err)), nil
+	}
+
 	fullMethodName := fmt.Sprintf("/%s/%s", request.GRPCConfig.Service, request.GRPCConfig.Method)
 
-	// Create bidirectional stream
 	stream, err := conn.NewStream(ctx, &grpc.StreamDesc{
-		StreamName: fullMethodName,
+		StreamName:    request.GRPCConfig.Method,
+		ClientStreams: true,
+		ServerStreams: true,
 	}, fullMethodName)
 	if err != nil {
 		return errorResponse(response, fmt.Sprintf("failed to create stream: %v", err)), nil
 	}
 
-	// Parse request body as JSON array of messages
-	var messages []interface{}
-	err = json.Unmarshal([]byte(request.Body), &messages)
-	if err != nil {
-		var msg interface{}
-		if err := json.Unmarshal([]byte(request.Body), &msg); err != nil {
-			return errorResponse(response, fmt.Sprintf("failed to parse request messages: %v", err)), nil
-		}
-		messages = []interface{}{msg}
+	// Parse request body: JSON array or single message
+	var rawMessages []json.RawMessage
+	body := strings.TrimSpace(request.Body)
+	if err := json.Unmarshal([]byte(body), &rawMessages); err != nil {
+		rawMessages = []json.RawMessage{json.RawMessage(body)}
 	}
 
-	// Send messages in goroutine
 	go func() {
-		for _, msg := range messages {
-			protoMsg := &dynamicpb.Message{}
-			if msgBytes, err := json.Marshal(msg); err == nil {
-				json.Unmarshal(msgBytes, protoMsg)
+		for _, raw := range rawMessages {
+			msg := dynamicpb.NewMessage(descs.input)
+			if err := protojson.Unmarshal([]byte(raw), msg); err == nil {
+				stream.SendMsg(msg)
 			}
-			stream.SendMsg(protoMsg)
 		}
 		stream.CloseSend()
 	}()
 
-	// Receive streaming responses
-	var responses []interface{}
+	var responses []json.RawMessage
 	for {
-		var msg interface{}
-		err := stream.RecvMsg(&msg)
+		rspMsg := dynamicpb.NewMessage(descs.output)
+		err := stream.RecvMsg(rspMsg)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			break
 		}
-		responses = append(responses, msg)
+		jsonBytes, _ := protojson.Marshal(rspMsg)
+		responses = append(responses, json.RawMessage(jsonBytes))
 	}
 
 	endTime := time.Since(startTime).Milliseconds()
 	response.Time = endTime
 
-	// Set response body as JSON array
 	bodyBytes, _ := json.MarshalIndent(responses, "", "  ")
 	response.Body = string(bodyBytes)
-
 	response.StatusCode = 200
 	response.Protocol = "gRPC"
 	response.ResponseTime = endTime
@@ -380,9 +436,16 @@ func (gc *GRPCClient) executeBidirectionalStreaming(conn *grpc.ClientConn, reque
 	return response, nil
 }
 
-// buildTLSConfig builds TLS configuration for gRPC connection
+// buildTLSConfig builds TLS configuration for gRPC connection.
+// Returns nil when UseTLS is false and no cert files are configured (insecure/plaintext connection).
 func (gc *GRPCClient) buildTLSConfig(request *models.Request) (*tls.Config, error) {
 	if request.GRPCConfig == nil {
+		return nil, nil
+	}
+
+	// Use plaintext (insecure) when TLS is not explicitly enabled and no cert files are provided
+	hasCerts := request.GRPCConfig.CertificateFile != "" || request.GRPCConfig.CACertFile != ""
+	if !request.GRPCConfig.UseTLS && !hasCerts {
 		return nil, nil
 	}
 

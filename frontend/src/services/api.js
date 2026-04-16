@@ -60,6 +60,25 @@ const api = {
     },
   },
 
+  proto: {
+    parse: async (content, filename) => {
+      try {
+        const response = await fetch(`${API_BASE}/proto/parse`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, filename: filename || 'proto' }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(payload?.error || `HTTP ${response.status}`);
+        }
+        return payload;
+      } catch (err) {
+        throw new Error(`Failed to parse proto file: ${err.message}`);
+      }
+    },
+  },
+
   collections: {
     create: async (name) => {
       try {
