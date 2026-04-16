@@ -31,6 +31,33 @@ const api = {
         throw new Error(`Failed to execute request: ${err.message}`);
       }
     },
+
+    executeGRPC: async (request) => {
+      try {
+        const response = await fetch(`${API_BASE}/request/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || `gRPC ${response.status}`;
+          const err = new Error(message);
+          if (payload?.error?.response) {
+            err.response = payload.error.response;
+          }
+          throw err;
+        }
+
+        return payload;
+      } catch (err) {
+        if (err?.response) {
+          throw err;
+        }
+        throw new Error(`Failed to execute gRPC request: ${err.message}`);
+      }
+    },
   },
 
   collections: {
