@@ -317,7 +317,6 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
         {/* gRPC Config Tab */}
         {request.requestType === 'GRPC' && activeTab === 'grpc-config' && (
           <div>
-            <h4>gRPC Configuration</h4>
             <div className="form-group">
               <label className="form-label">Service</label>
               <input
