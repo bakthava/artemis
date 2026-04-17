@@ -151,6 +151,30 @@ const api = {
         throw new Error(`Failed to add request: ${err.message}`);
       }
     },
+
+    export: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/export`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to export collections: ${err.message}`);
+      }
+    },
+
+    import: async (payload) => {
+      try {
+        const response = await fetch(`${API_BASE}/collections/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to import collections: ${err.message}`);
+      }
+    },
   },
 
   environments: {
@@ -211,6 +235,56 @@ const api = {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
       } catch (err) {
         throw new Error(`Failed to set active environment: ${err.message}`);
+      }
+    },
+
+    export: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/environments/export`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to export environments: ${err.message}`);
+      }
+    },
+
+    import: async (payload) => {
+      try {
+        const response = await fetch(`${API_BASE}/environments/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to import environments: ${err.message}`);
+      }
+    },
+  },
+
+  project: {
+    export: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/project/export`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to export project: ${err.message}`);
+      }
+    },
+
+    import: async (payload) => {
+      try {
+        const response = await fetch(`${API_BASE}/project/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to import project: ${err.message}`);
       }
     },
   },
@@ -375,6 +449,67 @@ const api = {
       } catch (err) {
         console.error('Failed to get proto directory:', err);
         return '';
+      }
+    },
+  },
+
+  certificates: {
+    list: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/certificates`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch certificates: ${err.message}`);
+      }
+    },
+
+    get: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/certificates/${id}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch certificate: ${err.message}`);
+      }
+    },
+
+    listSets: async () => {
+      try {
+        const response = await fetch(`${API_BASE}/certificate-sets`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch certificate sets: ${err.message}`);
+      }
+    },
+
+    getSet: async (id) => {
+      try {
+        const response = await fetch(`${API_BASE}/certificate-sets/${id}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to fetch certificate set: ${err.message}`);
+      }
+    },
+
+    testJksPassword: async (certificateId, password) => {
+      try {
+        const response = await fetch(`${API_BASE}/certificates/test-jks-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ certificateId, password }),
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.error || `HTTP ${response.status}`);
+        }
+
+        return payload;
+      } catch (err) {
+        throw new Error(`Failed to validate JKS password: ${err.message}`);
       }
     },
   },

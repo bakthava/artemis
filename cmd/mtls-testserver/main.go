@@ -90,29 +90,71 @@ func main() {
 	fmt.Printf("  JKS Password:       %s\n", jksPassword)
 	fmt.Println()
 
-	// Build mTLS server config
+	// Build mTLS server config - VerifyClientCertIfGiven allows both with and without client cert
 	caPool := x509.NewCertPool()
 	caPool.AddCert(caCert)
 
 	serverTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{*serverCert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    caPool,
 		MinVersion:   tls.VersionTLS12,
 	}
 
 	// Create HTTP handler
 	mux := http.NewServeMux()
+
+	// Main endpoint - accepts with or without client cert
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		clientInfo := map[string]interface{}{
-			"status":  "ok",
-			"message": "mTLS 2-way SSL successful!",
-			"time":    time.Now().Format(time.RFC3339),
-			"method":  r.Method,
-			"path":    r.URL.Path,
+			"status":        "ok",
+			"message":       "Connection successful!",
+			"time":          time.Now().Format(time.RFC3339),
+			"method":        r.Method,
+			"path":          r.URL.Path,
+			"hasMTLS":       false,
+			"clientPresent": false,
 		}
 
-		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		if r.TLS != nil {
+			clientInfo["tls_version"] = getTLSVersionString(r.TLS.Version)
+			clientInfo["cipher_suite"] = getTLSSuiteName(r.TLS.CipherSuite)
+
+			if len(r.TLS.PeerCertificates) > 0 {
+				clientInfo["hasMTLS"] = true
+				clientInfo["clientPresent"] = true
+				peer := r.TLS.PeerCertificates[0]
+				clientInfo["client_subject"] = peer.Subject.String()
+				clientInfo["client_issuer"] = peer.Issuer.String()
+				clientInfo["client_serial"] = peer.SerialNumber.String()
+				clientInfo["message"] = "mTLS 2-way SSL successful!"
+			} else {
+				clientInfo["message"] = "TLS connection successful (no client certificate)"
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(clientInfo)
+	})
+
+	// Strict mTLS endpoint - requires client certificate
+	mux.HandleFunc("/mtls-required", func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Client certificate required",
+				"hint":  "This endpoint requires mTLS authentication",
+			})
+			return
+		}
+
+		clientInfo := map[string]interface{}{
+			"status":  "ok",
+			"message": "mTLS endpoint requires client certificate - authenticated!",
+			"time":    time.Now().Format(time.RFC3339),
+		}
+
+		if len(r.TLS.PeerCertificates) > 0 {
 			peer := r.TLS.PeerCertificates[0]
 			clientInfo["client_subject"] = peer.Subject.String()
 			clientInfo["client_issuer"] = peer.Issuer.String()
@@ -145,11 +187,20 @@ func main() {
 
 	fmt.Printf("=== mTLS Test Server listening on https://localhost:%d ===\n", port)
 	fmt.Println()
-	fmt.Println("To test with Artemis:")
+	fmt.Println("Available Endpoints:")
+	fmt.Printf("  GET https://localhost:%d/               - Works with OR without client cert\n", port)
+	fmt.Printf("  GET https://localhost:%d/mtls-required   - Requires client certificate (mTLS)\n", port)
+	fmt.Printf("  GET https://localhost:%d/health          - Health check\n", port)
+	fmt.Println()
+	fmt.Println("To test with Artemis (TLS with client cert):")
 	fmt.Printf("  1. Import '%s' in Settings > Certificates\n", jksPath)
 	fmt.Printf("  2. Enter password: %s\n", jksPassword)
 	fmt.Printf("  3. Send a request to https://localhost:%d\n", port)
 	fmt.Println("  4. Disable SSL verification (self-signed CA)")
+	fmt.Println()
+	fmt.Println("To test without client cert:")
+	fmt.Printf("  1. Send a request to https://localhost:%d without importing certificates\n", port)
+	fmt.Println("  2. Disable SSL verification (self-signed CA)")
 	fmt.Println()
 	fmt.Println("Press Ctrl+C to stop.")
 	fmt.Println()
@@ -299,4 +350,42 @@ func buildJKS(certDER, keyPKCS1 []byte, jksPath, password string) error {
 	defer f.Close()
 
 	return ks.Store(f, []byte(password))
+}
+
+// getTLSVersionString returns human-readable TLS version
+func getTLSVersionString(version uint16) string {
+	switch version {
+	case tls.VersionTLS10:
+		return "TLS 1.0"
+	case tls.VersionTLS11:
+		return "TLS 1.1"
+	case tls.VersionTLS12:
+		return "TLS 1.2"
+	case tls.VersionTLS13:
+		return "TLS 1.3"
+	default:
+		return fmt.Sprintf("Unknown (0x%x)", version)
+	}
+}
+
+// getTLSSuiteName returns human-readable cipher suite name
+func getTLSSuiteName(suite uint16) string {
+	switch suite {
+	case tls.TLS_AES_128_GCM_SHA256:
+		return "TLS_AES_128_GCM_SHA256"
+	case tls.TLS_AES_256_GCM_SHA384:
+		return "TLS_AES_256_GCM_SHA384"
+	case tls.TLS_CHACHA20_POLY1305_SHA256:
+		return "TLS_CHACHA20_POLY1305_SHA256"
+	case tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+	case tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+	case tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+	case tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+	default:
+		return fmt.Sprintf("Unknown (0x%x)", suite)
+	}
 }

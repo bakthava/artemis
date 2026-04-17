@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-function Header({ onSave, onSettings, onFlow, flowActive }) {
+function Header({ onSave, onSettings, onFlow, onCertificates, flowActive }) {
   const [isDark, setIsDark] = useState(() =>
     localStorage.getItem('artemis-theme') === 'dark'
   );
@@ -29,6 +29,9 @@ function Header({ onSave, onSettings, onFlow, flowActive }) {
           title="Open Flow Builder"
         >
           ⚡ Flow
+        </button>
+        <button className="header-button" onClick={onCertificates} title="Manage certificates">
+          🔐 Certificates
         </button>
         <button
           className="theme-toggle-btn"

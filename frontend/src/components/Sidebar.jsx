@@ -1,18 +1,47 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useCollections, useHistory, useEnvironments } from '../hooks';
 import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
 import CollectionTree from './CollectionTree';
+import api from '../services/api';
 
 function Sidebar({ setResponse }) {
   const [activeTab, setActiveTab] = useState('collections');
-  const { collections, createCollection } = useCollections();
+  const { collections, createCollection, fetchCollections } = useCollections();
   const { history, clearHistory } = useHistory();
-  const { environments, createEnvironment } = useEnvironments();
+  const { environments, createEnvironment, fetchEnvironments } = useEnvironments();
   const { setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth } = useRequest();
   const { showToast } = useToast();
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newEnvironmentName, setNewEnvironmentName] = useState('');
+  const collectionImportRef = useRef(null);
+  const environmentImportRef = useRef(null);
+  const projectImportRef = useRef(null);
+
+  const downloadJSON = (data, fileName) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const readJSONFile = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          resolve(JSON.parse(reader.result));
+        } catch (err) {
+          reject(new Error('Invalid JSON file'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  };
 
   const handleCreateCollection = async () => {
     if (newCollectionName.trim()) {
@@ -32,6 +61,81 @@ function Sidebar({ setResponse }) {
     await clearHistory();
     setResponse(null);
     showToast('History cleared', 'info');
+  };
+
+  const handleExportCollections = async () => {
+    try {
+      const payload = await api.collections.export();
+      downloadJSON(payload, `collections-${Date.now()}.json`);
+      showToast('Collections exported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleImportCollections = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const payload = await readJSONFile(file);
+      await api.collections.import(payload);
+      await fetchCollections();
+      showToast('Collections imported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleExportEnvironments = async () => {
+    try {
+      const payload = await api.environments.export();
+      downloadJSON(payload, `environments-${Date.now()}.json`);
+      showToast('Environments exported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleImportEnvironments = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const payload = await readJSONFile(file);
+      await api.environments.import(payload);
+      await fetchEnvironments();
+      showToast('Environments imported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleExportProject = async () => {
+    try {
+      const payload = await api.project.export();
+      downloadJSON(payload, `project-${Date.now()}.json`);
+      showToast('Project exported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleImportProject = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const payload = await readJSONFile(file);
+      await api.project.import(payload);
+      await Promise.all([fetchCollections(), fetchEnvironments()]);
+      showToast('Project imported', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   return (
@@ -70,6 +174,21 @@ function Sidebar({ setResponse }) {
         )}
 
         <CollectionTree collections={collections} setResponse={setResponse} />
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+          <input
+            ref={collectionImportRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportCollections}
+            style={{ display: 'none' }}
+          />
+          <button className="sidebar-add-btn" onClick={handleExportCollections} title="Export collections">
+            Export
+          </button>
+          <button className="sidebar-add-btn" onClick={() => collectionImportRef.current?.click()} title="Import collections">
+            Import
+          </button>
+        </div>
       </div>
 
       {/* History Tab */}
@@ -178,6 +297,34 @@ function Sidebar({ setResponse }) {
               No environments
             </div>
           )}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+          <input
+            ref={environmentImportRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportEnvironments}
+            style={{ display: 'none' }}
+          />
+          <input
+            ref={projectImportRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportProject}
+            style={{ display: 'none' }}
+          />
+          <button className="sidebar-add-btn" onClick={handleExportEnvironments} title="Export environments">
+            Export Env
+          </button>
+          <button className="sidebar-add-btn" onClick={() => environmentImportRef.current?.click()} title="Import environments">
+            Import Env
+          </button>
+          <button className="sidebar-add-btn" onClick={handleExportProject} title="Export full project">
+            Export Project
+          </button>
+          <button className="sidebar-add-btn" onClick={() => projectImportRef.current?.click()} title="Import full project">
+            Import Project
+          </button>
         </div>
       </div>
     </div>

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRequest } from '../context/RequestContext';
 import { useToast } from '../context/ToastContext';
+import CertificateSelector from './CertificateSelector';
 import api from '../services/api';
 
 function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onRequestComplete }) {
-  const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest, setRequestType, setGRPCConfig } = useRequest();
+  const { request, setMethod, setUrl, setHeaders, setParams, setBody, setBodyType, setAuth, setRequest, setRequestType, setCertificateSetId, setGRPCConfig } = useRequest();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('params');
   const [protoServices, setProtoServices] = useState([]);
@@ -90,6 +91,84 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
 
     setLoading(true);
     try {
+      // Start with null/empty values
+      let certificateFile = null;
+      let keyFile = null;
+      let jksFile = null;
+      let jksPassword = '';
+      let grpcCertificateFile = null;
+      let grpcKeyFile = null;
+      let grpcCACertFile = null;
+
+      // Only load certificates if a set was explicitly selected
+      if (request.selectedCertificateSetId) {
+        try {
+          const certSet = await api.certificates.getSet(request.selectedCertificateSetId);
+          const certificateId = certSet.certificateId || certSet.CertificateID;
+          const keyId = certSet.keyId || certSet.KeyID;
+          const caCertId = certSet.caCertId || certSet.CACertID;
+          const jksId = certSet.jksId || certSet.JksID;
+          const selectedJksPassword = certSet.jksPassword || certSet.JksPassword || '';
+          
+          // Load each certificate from the set
+          const certificatePromises = [];
+          if (certificateId) {
+            certificatePromises.push(
+              api.certificates.get(certificateId)
+                .then(cert => ({ type: 'cert', cert }))
+            );
+          }
+          if (keyId) {
+            certificatePromises.push(
+              api.certificates.get(keyId)
+                .then(cert => ({ type: 'key', cert }))
+            );
+          }
+          if (caCertId) {
+            certificatePromises.push(
+              api.certificates.get(caCertId)
+                .then(cert => ({ type: 'ca', cert }))
+            );
+          }
+          if (jksId) {
+            certificatePromises.push(
+              api.certificates.get(jksId)
+                .then(cert => ({ type: 'jks', cert }))
+            );
+          }
+
+          const certs = await Promise.all(certificatePromises);
+          
+          // Assign base64-encoded content directly (backend will decode)
+          // Don't decode with atob() as it corrupts binary files like JKS
+          certs.forEach(({ type, cert }) => {
+            const certContent = cert.content || cert.Content;
+            if (certContent) {
+              if (type === 'cert') {
+                certificateFile = certContent;  // Keep as base64
+                grpcCertificateFile = certContent;  // Keep as base64
+              } else if (type === 'key') {
+                keyFile = certContent;  // Keep as base64
+                grpcKeyFile = certContent;  // Keep as base64
+              } else if (type === 'ca') {
+                grpcCACertFile = certContent;  // Keep as base64
+              } else if (type === 'jks') {
+                jksFile = certContent;  // Keep as base64
+              }
+            }
+          });
+
+          // Set JKS password from certificate set if available
+          if (selectedJksPassword) {
+            jksPassword = selectedJksPassword;
+          }
+        } catch (err) {
+          showToast(`Failed to load selected certificates: ${err.message}`, 'error');
+          setLoading(false);
+          return;
+        }
+      }
+
       let response;
       if (request.requestType === 'GRPC') {
         // gRPC request
@@ -107,9 +186,9 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
             metadata: request.grpcConfig.metadata,
             callType: request.grpcConfig.callType,
             useTLS: request.grpcConfig.useTLS,
-            certificateFile: request.grpcConfig.certificateFile,
-            keyFile: request.grpcConfig.keyFile,
-            caCertFile: request.grpcConfig.caCertFile,
+            certificateFile: grpcCertificateFile,
+            keyFile: grpcKeyFile,
+            caCertFile: grpcCACertFile,
           },
         });
       } else {
@@ -139,10 +218,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
           disabledTLSProtocols: request.disabledTLSProtocols,
           cipherSuites: request.cipherSuites,
           logLevel: request.logLevel,
-          certificateFile: request.certificateFile,
-          keyFile: request.keyFile,
-          jksFile: request.jksFile,
-          jksPassword: request.jksPassword,
+          certificateFile: certificateFile,
+          keyFile: keyFile,
+          jksFile: jksFile,
+          jksPassword: jksPassword,
         });
       }
       
@@ -242,16 +321,22 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
   return (
     <div className="request-builder">
       {/* Request Type Selector */}
-      <div style={{ marginTop: '15px', marginBottom: '12px', padding: '0 5px' }}>
-        <label style={{ fontWeight: 'bold', marginRight: '8px', display: 'inline-block' }}>Request Type:</label>
-        <select
-          value={request.requestType || 'HTTP'}
-          onChange={(e) => setRequestType(e.target.value)}
-          style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
-        >
-          <option value="HTTP">HTTP</option>
-          <option value="GRPC">gRPC</option>
-        </select>
+      <div style={{ marginTop: '15px', marginBottom: '12px', padding: '0 5px', display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div>
+          <label style={{ fontWeight: 'bold', marginRight: '8px', display: 'inline-block' }}>Request Type:</label>
+          <select
+            value={request.requestType || 'HTTP'}
+            onChange={(e) => setRequestType(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
+          >
+            <option value="HTTP">HTTP</option>
+            <option value="GRPC">gRPC</option>
+          </select>
+        </div>
+        <CertificateSelector
+          selectedSetId={request.selectedCertificateSetId}
+          onSelect={(id) => setCertificateSetId(id)}
+        />
       </div>
 
       {/* URL Bar */}
@@ -507,6 +592,52 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
                 Enable for TLS/mTLS connections. Leave unchecked for plaintext (e.g. port 50051).
               </div>
             </div>
+
+            {/* TLS Certificate Files (shown when TLS is enabled) */}
+            {request.grpcConfig?.useTLS && (
+              <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '13px' }}>TLS Configuration</h4>
+                
+                {/* Client Certificate */}
+                <div className="form-group">
+                  <label className="form-label">Client Certificate (optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Path to client certificate file (.pem, .crt, .cer)"
+                    value={request.grpcConfig?.certificateFile || ''}
+                    onChange={(e) => setGRPCConfig({ certificateFile: e.target.value })}
+                  />
+                  <div className="form-hint">For mTLS, provide the client certificate file path</div>
+                </div>
+
+                {/* Client Key */}
+                <div className="form-group">
+                  <label className="form-label">Client Key (optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Path to client key file (.pem, .key)"
+                    value={request.grpcConfig?.keyFile || ''}
+                    onChange={(e) => setGRPCConfig({ keyFile: e.target.value })}
+                  />
+                  <div className="form-hint">Private key file (used with client certificate)</div>
+                </div>
+
+                {/* CA Certificate */}
+                <div className="form-group">
+                  <label className="form-label">CA Certificate (optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Path to CA certificate file (.pem, .crt)"
+                    value={request.grpcConfig?.caCertFile || ''}
+                    onChange={(e) => setGRPCConfig({ caCertFile: e.target.value })}
+                  />
+                  <div className="form-hint">Server CA certificate for certificate validation</div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

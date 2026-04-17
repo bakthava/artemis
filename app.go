@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	keystore "github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
@@ -43,6 +44,7 @@ type App struct {
 	environmentRepository *db.EnvironmentRepository
 	historyRepository     *db.HistoryRepository
 	flowRepository        *db.FlowRepository
+	certificateRepository *db.CertificateRepository
 	httpClient            *services.HTTPClient
 	grpcClient            *services.GRPCClient
 	protoFileManager      *services.ProtoFileManager
@@ -75,6 +77,7 @@ func (a *App) startup(ctx context.Context) {
 	a.environmentRepository = db.NewEnvironmentRepository(database)
 	a.historyRepository = db.NewHistoryRepository(database)
 	a.flowRepository = db.NewFlowRepository(database)
+	a.certificateRepository = db.NewCertificateRepository(database)
 
 	// Initialize HTTP client
 	a.httpClient = services.NewHTTPClient()
@@ -135,7 +138,12 @@ func (a *App) ExecuteRequest(req *models.Request) (*models.Response, error) {
 
 // Collections methods
 func (a *App) CreateCollection(name string) (*models.Collection, error) {
-	return a.collectionRepository.Create(name)
+	collection, err := a.collectionRepository.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return collection, nil
 }
 
 func (a *App) GetCollections() ([]*models.Collection, error) {
@@ -147,20 +155,43 @@ func (a *App) GetCollection(id string) (*models.Collection, error) {
 }
 
 func (a *App) UpdateCollection(collection *models.Collection) error {
-	return a.collectionRepository.Update(collection.ID, collection.Name)
+	err := a.collectionRepository.Update(collection.ID, collection.Name)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
 }
 
 func (a *App) DeleteCollection(id string) error {
-	return a.collectionRepository.Delete(id)
+	err := a.collectionRepository.Delete(id)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
 }
 
 func (a *App) AddRequestToCollection(collectionID string, request *models.Request) error {
-	return a.collectionRepository.AddRequest(collectionID, request)
+	if request.ID == "" {
+		request.ID = uuid.New().String()
+	}
+	err := a.collectionRepository.AddRequest(collectionID, request)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
 }
 
 // Environment methods
 func (a *App) CreateEnvironment(name string) (*models.Environment, error) {
-	return a.environmentRepository.Create(name)
+	env, err := a.environmentRepository.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return env, nil
 }
 
 func (a *App) GetEnvironments() ([]*models.Environment, error) {
@@ -168,15 +199,248 @@ func (a *App) GetEnvironments() ([]*models.Environment, error) {
 }
 
 func (a *App) UpdateEnvironment(environment *models.Environment) error {
-	return a.environmentRepository.Update(environment.ID, environment.Variables)
+	err := a.environmentRepository.Update(environment.ID, environment.Variables)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
 }
 
 func (a *App) DeleteEnvironment(id string) error {
-	return a.environmentRepository.Delete(id)
+	err := a.environmentRepository.Delete(id)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
 }
 
 func (a *App) SetActiveEnvironment(id string) error {
-	return a.environmentRepository.SetActive(id)
+	err := a.environmentRepository.SetActive(id)
+	if err != nil {
+		return err
+	}
+	_ = a.persistCollectionsForActiveEnvironment()
+	return nil
+}
+
+// ExportCollections returns all collections packaged for export.
+func (a *App) ExportCollections() (map[string]interface{}, error) {
+	collections, err := a.collectionRepository.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	envName := a.getActiveEnvironmentName()
+	return map[string]interface{}{
+		"version":         1,
+		"type":            "collections",
+		"environmentName": envName,
+		"exportedAt":      time.Now().Format(time.RFC3339),
+		"collections":     collections,
+	}, nil
+}
+
+// ImportCollections imports collections and their requests into storage.
+func (a *App) ImportCollections(collections []*models.Collection) (int, error) {
+	imported := 0
+	for _, collection := range collections {
+		if collection == nil {
+			continue
+		}
+
+		name := strings.TrimSpace(collection.Name)
+		if name == "" {
+			name = "Imported Collection"
+		}
+
+		created, err := a.collectionRepository.Create(name)
+		if err != nil {
+			return imported, err
+		}
+
+		for _, req := range collection.Requests {
+			if req == nil {
+				continue
+			}
+			if req.ID == "" {
+				req.ID = uuid.New().String()
+			}
+			if err := a.collectionRepository.AddRequest(created.ID, req); err != nil {
+				return imported, err
+			}
+		}
+
+		imported++
+	}
+
+	_ = a.persistCollectionsForActiveEnvironment()
+	return imported, nil
+}
+
+// ExportEnvironments returns all environments packaged for export.
+func (a *App) ExportEnvironments() (map[string]interface{}, error) {
+	environments, err := a.environmentRepository.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"version":      1,
+		"type":         "environments",
+		"exportedAt":   time.Now().Format(time.RFC3339),
+		"environments": environments,
+	}, nil
+}
+
+// ImportEnvironments imports environments and restores active environment if specified.
+func (a *App) ImportEnvironments(environments []*models.Environment) (int, error) {
+	imported := 0
+	var activeEnvID string
+
+	for _, environment := range environments {
+		if environment == nil {
+			continue
+		}
+
+		name := strings.TrimSpace(environment.Name)
+		if name == "" {
+			name = "Imported Environment"
+		}
+
+		created, err := a.environmentRepository.Create(name)
+		if err != nil {
+			return imported, err
+		}
+
+		vars := environment.Variables
+		if vars == nil {
+			vars = map[string]string{}
+		}
+
+		if err := a.environmentRepository.Update(created.ID, vars); err != nil {
+			return imported, err
+		}
+
+		if environment.Active {
+			activeEnvID = created.ID
+		}
+
+		imported++
+	}
+
+	if activeEnvID != "" {
+		if err := a.environmentRepository.SetActive(activeEnvID); err != nil {
+			return imported, err
+		}
+	}
+
+	_ = a.persistCollectionsForActiveEnvironment()
+	return imported, nil
+}
+
+// ExportProject exports collections and environments together.
+func (a *App) ExportProject() (map[string]interface{}, error) {
+	collections, err := a.collectionRepository.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	environments, err := a.environmentRepository.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"version":       1,
+		"type":          "project",
+		"exportedAt":    time.Now().Format(time.RFC3339),
+		"projectName":   "artemis",
+		"activeEnvName": a.getActiveEnvironmentName(),
+		"collections":   collections,
+		"environments":  environments,
+	}, nil
+}
+
+// ImportProject imports a project payload containing environments and collections.
+func (a *App) ImportProject(environments []*models.Environment, collections []*models.Collection) (map[string]int, error) {
+	envCount, err := a.ImportEnvironments(environments)
+	if err != nil {
+		return nil, err
+	}
+
+	colCount, err := a.ImportCollections(collections)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]int{
+		"environments": envCount,
+		"collections":  colCount,
+	}, nil
+}
+
+func sanitizePathSegment(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "default"
+	}
+	replacer := strings.NewReplacer(
+		"<", "_",
+		">", "_",
+		":", "_",
+		"\"", "_",
+		"/", "_",
+		"\\", "_",
+		"|", "_",
+		"?", "_",
+		"*", "_",
+	)
+	return replacer.Replace(strings.TrimSpace(value))
+}
+
+func (a *App) getActiveEnvironmentName() string {
+	if a.environmentRepository == nil {
+		return "default"
+	}
+	environments, err := a.environmentRepository.GetAll()
+	if err != nil {
+		return "default"
+	}
+	for _, env := range environments {
+		if env != nil && env.Active {
+			if strings.TrimSpace(env.Name) != "" {
+				return env.Name
+			}
+			break
+		}
+	}
+	return "default"
+}
+
+func (a *App) persistCollectionsForActiveEnvironment() error {
+	collections, err := a.collectionRepository.GetAll()
+	if err != nil {
+		return err
+	}
+
+	envName := sanitizePathSegment(a.getActiveEnvironmentName())
+	baseDir := filepath.Join(os.Getenv("APPDATA"), "artemis", "environments", envName)
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return err
+	}
+
+	payload := map[string]interface{}{
+		"version":         1,
+		"environmentName": envName,
+		"savedAt":         time.Now().Format(time.RFC3339),
+		"collections":     collections,
+	}
+
+	bytes, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(baseDir, "collections.json"), bytes, 0644)
 }
 
 // History methods

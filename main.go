@@ -40,6 +40,8 @@ func (s *HTTPServer) setupRoutes() {
 	// Collections endpoints
 	s.router.HandleFunc("POST /api/collections", s.handleCreateCollection)
 	s.router.HandleFunc("GET /api/collections", s.handleGetCollections)
+	s.router.HandleFunc("GET /api/collections/export", s.handleExportCollections)
+	s.router.HandleFunc("POST /api/collections/import", s.handleImportCollections)
 	s.router.HandleFunc("GET /api/collections/{id}", s.handleGetCollection)
 	s.router.HandleFunc("PUT /api/collections/{id}", s.handleUpdateCollection)
 	s.router.HandleFunc("DELETE /api/collections/{id}", s.handleDeleteCollection)
@@ -48,9 +50,15 @@ func (s *HTTPServer) setupRoutes() {
 	// Environments endpoints
 	s.router.HandleFunc("POST /api/environments", s.handleCreateEnvironment)
 	s.router.HandleFunc("GET /api/environments", s.handleGetEnvironments)
+	s.router.HandleFunc("GET /api/environments/export", s.handleExportEnvironments)
+	s.router.HandleFunc("POST /api/environments/import", s.handleImportEnvironments)
 	s.router.HandleFunc("PUT /api/environments/{id}", s.handleUpdateEnvironment)
 	s.router.HandleFunc("DELETE /api/environments/{id}", s.handleDeleteEnvironment)
 	s.router.HandleFunc("POST /api/environments/{id}/active", s.handleSetActiveEnvironment)
+
+	// Project import/export endpoints
+	s.router.HandleFunc("GET /api/project/export", s.handleExportProject)
+	s.router.HandleFunc("POST /api/project/import", s.handleImportProject)
 
 	// History endpoints
 	s.router.HandleFunc("GET /api/history", s.handleGetHistory)
@@ -70,11 +78,23 @@ func (s *HTTPServer) setupRoutes() {
 
 	// Certificate / mTLS test endpoints
 	s.router.HandleFunc("POST /api/certificates/test-jks", s.handleTestJKS)
+	s.router.HandleFunc("POST /api/certificates/test-jks-password", s.handleTestJKSPassword)
 	s.router.HandleFunc("POST /api/certificates/mtls-server/start", s.handleStartMTLSServer)
 	s.router.HandleFunc("POST /api/certificates/mtls-server/stop", s.handleStopMTLSServer)
 
 	// Proto file parsing endpoint
 	s.router.HandleFunc("POST /api/proto/parse", s.handleParseProto)
+
+	// Certificate management endpoints
+	s.router.HandleFunc("POST /api/certificates", s.handleUploadCertificate)
+	s.router.HandleFunc("GET /api/certificates", s.handleListCertificates)
+	s.router.HandleFunc("GET /api/certificates/{id}", s.handleGetCertificate)
+	s.router.HandleFunc("DELETE /api/certificates/{id}", s.handleDeleteCertificate)
+	s.router.HandleFunc("GET /api/certificate-sets", s.handleListCertificateSets)
+	s.router.HandleFunc("POST /api/certificate-sets", s.handleCreateCertificateSet)
+	s.router.HandleFunc("GET /api/certificate-sets/{id}", s.handleGetCertificateSet)
+	s.router.HandleFunc("PUT /api/certificate-sets/{id}", s.handleUpdateCertificateSet)
+	s.router.HandleFunc("DELETE /api/certificate-sets/{id}", s.handleDeleteCertificateSet)
 
 	// Serve frontend (SPA fallback to index.html)
 	s.router.HandleFunc("/", s.handleStatic)
@@ -124,6 +144,39 @@ func (s *HTTPServer) handleGetCollections(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(collections)
+}
+
+func (s *HTTPServer) handleExportCollections(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	payload, err := s.app.ExportCollections()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
+func (s *HTTPServer) handleImportCollections(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Collections []*models.Collection `json:"collections"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	count, err := s.app.ImportCollections(req.Collections)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"imported": count,
+	})
 }
 
 func (s *HTTPServer) handleGetCollection(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +261,71 @@ func (s *HTTPServer) handleGetEnvironments(w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(environments)
+}
+
+func (s *HTTPServer) handleExportEnvironments(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	payload, err := s.app.ExportEnvironments()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
+func (s *HTTPServer) handleImportEnvironments(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Environments []*models.Environment `json:"environments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	count, err := s.app.ImportEnvironments(req.Environments)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"imported": count,
+	})
+}
+
+func (s *HTTPServer) handleExportProject(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	payload, err := s.app.ExportProject()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
+func (s *HTTPServer) handleImportProject(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Collections  []*models.Collection  `json:"collections"`
+		Environments []*models.Environment `json:"environments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	counts, err := s.app.ImportProject(req.Environments, req.Collections)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(counts)
 }
 
 func (s *HTTPServer) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -430,6 +548,45 @@ func (s *HTTPServer) handleTestJKS(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+func (s *HTTPServer) handleTestJKSPassword(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		CertificateID string `json:"certificateId"`
+		Password      string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.CertificateID == "" {
+		http.Error(w, "certificateId is required", http.StatusBadRequest)
+		return
+	}
+
+	cert, err := s.app.certificateRepository.GetCertificate(req.CertificateID)
+	if err != nil {
+		http.Error(w, "certificate not found", http.StatusNotFound)
+		return
+	}
+
+	if cert.Type != models.CertificateTypeJKS {
+		http.Error(w, "certificate is not a JKS type", http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.app.TestJKS(cert.Content, req.Password)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"valid": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func (s *HTTPServer) handleStartMTLSServer(w http.ResponseWriter, r *http.Request) {
 	s.handleCORS(w, r)
 	var req struct {
@@ -484,6 +641,140 @@ func (s *HTTPServer) handleParseProto(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(protoFile)
+}
+
+// Certificate handlers
+func (s *HTTPServer) handleUploadCertificate(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var req struct {
+		Name     string   `json:"name"`
+		Type     string   `json:"type"`
+		Content  string   `json:"content"`
+		Filename string   `json:"filename"`
+		Tags     []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cert := &models.Certificate{
+		Name:     req.Name,
+		Type:     models.CertificateType(req.Type),
+		Content:  req.Content,
+		Filename: req.Filename,
+		Tags:     req.Tags,
+	}
+
+	if err := s.app.certificateRepository.SaveCertificate(cert); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cert)
+}
+
+func (s *HTTPServer) handleListCertificates(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	certs, err := s.app.certificateRepository.ListCertificates()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(certs)
+}
+
+func (s *HTTPServer) handleGetCertificate(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	cert, err := s.app.certificateRepository.GetCertificate(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cert)
+}
+
+func (s *HTTPServer) handleDeleteCertificate(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	if err := s.app.certificateRepository.DeleteCertificate(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *HTTPServer) handleListCertificateSets(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	sets, err := s.app.certificateRepository.ListCertificateSets()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sets)
+}
+
+func (s *HTTPServer) handleCreateCertificateSet(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var set models.CertificateSet
+	if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.app.certificateRepository.SaveCertificateSet(&set); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(set)
+}
+
+func (s *HTTPServer) handleGetCertificateSet(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	set, err := s.app.certificateRepository.GetCertificateSet(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(set)
+}
+
+func (s *HTTPServer) handleUpdateCertificateSet(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	var set models.CertificateSet
+	if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	set.ID = id
+
+	if err := s.app.certificateRepository.SaveCertificateSet(&set); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(set)
+}
+
+func (s *HTTPServer) handleDeleteCertificateSet(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	id := r.PathValue("id")
+	if err := s.app.certificateRepository.DeleteCertificateSet(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

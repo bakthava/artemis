@@ -1,10 +1,11 @@
-import React, { createContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useReducer, useCallback, useEffect, useRef } from 'react';
 
 export const RequestContext = createContext();
 
 const initialState = {
   // Request Type
   requestType: 'HTTP',  // HTTP or GRPC
+  selectedCertificateSetId: null,  // Global certificate set selector
 
   // HTTP Settings
   method: 'GET',
@@ -69,6 +70,8 @@ const requestReducer = (state, action) => {
   switch (action.type) {
     case 'SET_REQUEST_TYPE':
       return { ...state, requestType: action.payload };
+    case 'SET_CERTIFICATE_SET_ID':
+      return { ...state, selectedCertificateSetId: action.payload };
     case 'SET_METHOD':
       return { ...state, method: action.payload };
     case 'SET_URL':
@@ -104,11 +107,19 @@ const requestReducer = (state, action) => {
 
 export const RequestProvider = ({ children }) => {
   const [state, dispatch] = useReducer(requestReducer, initialState);
+  const hasHydratedRef = useRef(false);
 
+  // Load state from localStorage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem('artemis-draft-request') || sessionStorage.getItem('artemis-draft-request');
+      const savedCertificateSetId = localStorage.getItem('artemis-selected-certificate-set-id');
+
       if (!saved) {
+        if (savedCertificateSetId) {
+          dispatch({ type: 'SET_CERTIFICATE_SET_ID', payload: savedCertificateSetId });
+        }
+        hasHydratedRef.current = true;
         return;
       }
 
@@ -124,12 +135,49 @@ export const RequestProvider = ({ children }) => {
           disabledTLSProtocols: parsed.disabledTLSProtocols || [],
           cipherSuites: parsed.cipherSuites || [],
           logLevel: parsed.logLevel || 'info',
+          selectedCertificateSetId: parsed.selectedCertificateSetId || savedCertificateSetId || null,
         },
       });
     } catch (err) {
       // Ignore invalid draft payloads.
+    } finally {
+      hasHydratedRef.current = true;
     }
   }, []);
+
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    if (!hasHydratedRef.current) {
+      return;
+    }
+
+    try {
+      localStorage.setItem('artemis-draft-request', JSON.stringify(state));
+      if (state.selectedCertificateSetId) {
+        localStorage.setItem('artemis-selected-certificate-set-id', state.selectedCertificateSetId);
+      } else {
+        localStorage.removeItem('artemis-selected-certificate-set-id');
+      }
+    } catch (err) {
+      console.warn('Failed to save draft request to localStorage:', err);
+    }
+  }, [state]);
+
+  // Self-heal selected certificate set if another state load path clears it.
+  useEffect(() => {
+    if (!hasHydratedRef.current || state.selectedCertificateSetId) {
+      return;
+    }
+
+    try {
+      const savedCertificateSetId = localStorage.getItem('artemis-selected-certificate-set-id');
+      if (savedCertificateSetId) {
+        dispatch({ type: 'SET_CERTIFICATE_SET_ID', payload: savedCertificateSetId });
+      }
+    } catch (err) {
+      // Non-blocking storage fallback.
+    }
+  }, [state.selectedCertificateSetId]);
 
   const setMethod = useCallback((method) => {
     dispatch({ type: 'SET_METHOD', payload: method });
@@ -175,15 +223,31 @@ export const RequestProvider = ({ children }) => {
     dispatch({ type: 'SET_REQUEST_TYPE', payload: type });
   }, []);
 
+  const setCertificateSetId = useCallback((id) => {
+    try {
+      if (id) {
+        localStorage.setItem('artemis-selected-certificate-set-id', id);
+      } else {
+        localStorage.removeItem('artemis-selected-certificate-set-id');
+      }
+    } catch (err) {
+      // Non-blocking storage fallback.
+    }
+    dispatch({ type: 'SET_CERTIFICATE_SET_ID', payload: id });
+  }, []);
+
   const setGRPCConfig = useCallback((config) => {
     dispatch({ type: 'SET_GRPC_CONFIG', payload: config });
   }, []);
 
   const loadRequest = useCallback((request) => {
+    const selectedCertificateSetId = request.selectedCertificateSetId || state.selectedCertificateSetId || null;
+
     dispatch({ 
       type: 'LOAD_REQUEST', 
       payload: {
         ...initialState,
+        selectedCertificateSetId,
         requestType: request.type || 'HTTP',
         method: request.method || 'GET',
         url: request.url || '',
@@ -212,7 +276,7 @@ export const RequestProvider = ({ children }) => {
         grpcConfig: request.grpcConfig || initialState.grpcConfig,
       }
     });
-  }, []);
+  }, [state.selectedCertificateSetId]);
 
   const reset = useCallback(() => {
     dispatch({ type: 'RESET' });
@@ -225,6 +289,7 @@ export const RequestProvider = ({ children }) => {
   const value = {
     request: state,
     setRequestType,
+    setCertificateSetId,
     setMethod,
     setUrl,
     setHeaders,

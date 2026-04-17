@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import './App.css';
 import { RequestProvider } from './context/RequestContext';
 import { ToastProvider } from './context/ToastContext';
+import { CertificateProvider } from './context/CertificateContext';
 import { AppProvider, useAppContext } from './context/AppContext';
 import Header from './components/Header';
 import EnvSelector from './components/EnvSelector';
@@ -10,6 +11,7 @@ import RequestBuilder from './components/RequestBuilder';
 import ResponseViewer from './components/ResponseViewer';
 import SaveRequestModal from './components/SaveRequestModal';
 import SettingsModal from './components/SettingsModal';
+import CertificateManager from './components/CertificateManager';
 import FlowBuilder from './components/FlowBuilder';
 import Toast from './components/Toast';
 import { useKeyboardShortcuts, useAutoSave, useLoadDraftRequest } from './hooks';
@@ -21,6 +23,7 @@ function AppContent() {
   const [loading, setLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCertificateManager, setShowCertificateManager] = useState(false);
   const [showFlow, setShowFlow] = useState(false);
   const urlInputRef = useRef(null);
   const { request } = useRequest();
@@ -45,6 +48,7 @@ function AppContent() {
       <Header
         onSave={() => setShowSaveModal(true)}
         onSettings={() => setShowSettingsModal(true)}
+        onCertificates={() => setShowCertificateManager(true)}
         onFlow={() => setShowFlow(v => !v)}
         flowActive={showFlow}
       />
@@ -79,6 +83,10 @@ function AppContent() {
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
       />
+      <CertificateManager
+        isOpen={showCertificateManager}
+        onClose={() => setShowCertificateManager(false)}
+      />
       <Toast />
     </>
   );
@@ -87,11 +95,13 @@ function AppContent() {
 function App() {
   return (
     <ToastProvider>
-      <RequestProvider>
-        <AppProvider>
-          <AppContent />
-        </AppProvider>
-      </RequestProvider>
+      <CertificateProvider>
+        <RequestProvider>
+          <AppProvider>
+            <AppContent />
+          </AppProvider>
+        </RequestProvider>
+      </CertificateProvider>
     </ToastProvider>
   );
 }
