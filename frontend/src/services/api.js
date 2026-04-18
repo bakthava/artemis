@@ -512,6 +512,20 @@ const api = {
         throw new Error(`Failed to validate JKS password: ${err.message}`);
       }
     },
+
+    restore: async (certificatesData) => {
+      try {
+        const response = await fetch(`${API_BASE}/certificates/restore`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(certificatesData),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        throw new Error(`Failed to restore certificates: ${err.message}`);
+      }
+    },
   },
 };
 

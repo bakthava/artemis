@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "launchPathUsed": "msedge-channel",
+  "checks": {
+    "gNumInRange": true,
+    "gUuidFormat": true,
+    "gTime14Digits": true,
+    "gTextLength": true,
+    "scriptVarPrefix": true,
+    "fileVarBeta": true,
+    "combinedResolvedAndPipes": true,
+    "setVariableNodeSuccess": true
+  },
+  "runtimeVariables": {
+    "gNum": "11",
+    "gUuid": "28756e23-846d-4874-8b89-2677ec335e2b",
+    "gTime": "20260417213305",
+    "gText": "w6P13sfr",
+    "scriptVar": "11-6",
+    "fileVar": "beta",
+    "combined": "11|28756e23-846d-4874-8b89-2677ec335e2b|20260417213305|w6P13sfr|11-6|beta"
+  },
+  "errors": []
+}

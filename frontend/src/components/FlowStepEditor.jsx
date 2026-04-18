@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CertificateSelector from './CertificateSelector';
 
 const OPERATORS = [
   { value: 'equals',       label: '= equals'        },
@@ -39,6 +40,7 @@ function ConditionRow({ condition = {}, onChange }) {
 // ── Shared: mini nested step list (inside condition / loop editors) ───────────
 const MINI_TYPES = [
   { type: 'request',      icon: '🌐', label: 'HTTP Request'  },
+  { type: 'grpc',         icon: '⚙️', label: 'gRPC Request'   },
   { type: 'condition',    icon: '🔀', label: 'Condition'     },
   { type: 'loop',         icon: '🔁', label: 'Loop'          },
   { type: 'delay',        icon: '⏱',  label: 'Delay'         },
@@ -50,7 +52,8 @@ const TYPE_ICONS = Object.fromEntries(MINI_TYPES.map(t => [t.type, t.icon]));
 function mkNested(type) {
   const id = `s${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
   switch (type) {
-    case 'request':      return { id, type, name: 'HTTP Request', enabled: true, request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, extractions: [], assertions: [] };
+    case 'request':      return { id, type, name: 'HTTP Request', enabled: true, requestType: 'HTTP', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, grpcConfig: { url: '', service: '', method: '', message: '', protoContent: '', protoPath: '', messageFormat: 'JSON', metadata: {}, callType: 'unary', useTLS: false, certificateFile: null, keyFile: null, caCertFile: null }, extractions: [], assertions: [] };
+    case 'grpc':         return { id, type, name: 'gRPC Request', enabled: true, requestType: 'GRPC', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, grpcConfig: { url: '', service: '', method: '', message: '', protoContent: '', protoPath: '', messageFormat: 'JSON', metadata: {}, callType: 'unary', useTLS: false, certificateFile: null, keyFile: null, caCertFile: null }, extractions: [], assertions: [] };
     case 'condition':    return { id, type, name: 'Condition', enabled: true, condition: { left: '', operator: 'equals', right: '' }, thenSteps: [], elseSteps: [] };
     case 'loop':         return { id, type, name: 'Loop', enabled: true, loopType: 'count', loopCount: 3, loopCondition: { left: '', operator: 'equals', right: '' }, loopSteps: [] };
     case 'delay':        return { id, type, name: 'Delay', enabled: true, delayMs: 1000 };
@@ -128,6 +131,25 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
   }
   function mapAdd(field) {
     updReq({ [field]: { ...(step.request?.[field] || {}), '': '' } });
+  }
+
+  // ── gRPC metadata helpers ──────────────────────────────────────────────
+  function updGRPCConfig(grpcUpdates) {
+    upd({ grpcConfig: { ...step.grpcConfig, ...grpcUpdates } });
+  }
+  function metadataSet(oldKey, newKey, value) {
+    const m = { ...(step.grpcConfig?.metadata || {}) };
+    if (oldKey !== newKey) delete m[oldKey];
+    m[newKey] = value;
+    updGRPCConfig({ metadata: m });
+  }
+  function metadataDel(key) {
+    const m = { ...(step.grpcConfig?.metadata || {}) };
+    delete m[key];
+    updGRPCConfig({ metadata: m });
+  }
+  function metadataAdd() {
+    updGRPCConfig({ metadata: { ...(step.grpcConfig?.metadata || {}), '': '' } });
   }
 
   // ── Extractions ────────────────────────────────────────────────────────────
@@ -274,60 +296,339 @@ export default function FlowStepEditor({ step, onUpdate, stepStatuses = {} }) {
       {/* ── REQUEST ──────────────────────────────────────────────────────── */}
       {step.type === 'request' && (
         <div className="editor-body">
-          {/* Method + URL */}
-          <div className="editor-method-url">
-            <select className="form-input editor-method-sel" value={step.request?.method || 'GET'}
-              onChange={e => updReq({ method: e.target.value })}>
-              {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
-            </select>
+          {/* Request Type Selector */}
+          <div className="editor-section" style={{ marginBottom: 16 }}>
+            <div className="editor-sec-title">Request Type</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: (step.requestType || 'HTTP') === 'HTTP' ? '2px solid #3b82f6' : '1px solid #ccc',
+                  background: (step.requestType || 'HTTP') === 'HTTP' ? '#3b82f6' : '#fff',
+                  color: (step.requestType || 'HTTP') === 'HTTP' ? '#fff' : '#000',
+                  cursor: 'pointer',
+                  fontWeight: (step.requestType || 'HTTP') === 'HTTP' ? 'bold' : 'normal',
+                }}
+                onClick={() => upd({ requestType: 'HTTP' })}
+              >
+                🌐 HTTP/REST
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: step.requestType === 'GRPC' ? '2px solid #8b5cf6' : '1px solid #ccc',
+                  background: step.requestType === 'GRPC' ? '#8b5cf6' : '#fff',
+                  color: step.requestType === 'GRPC' ? '#fff' : '#000',
+                  cursor: 'pointer',
+                  fontWeight: step.requestType === 'GRPC' ? 'bold' : 'normal',
+                }}
+                onClick={() => upd({ requestType: 'GRPC' })}
+              >
+                ⚙️ gRPC
+              </button>
+            </div>
+          </div>
+
+          {/* Certificate Selector (for both HTTP/gRPC) */}
+          <div className="editor-section" style={{ marginBottom: 16 }}>
+            <div className="editor-sec-title">mTLS Certificate</div>
+            <CertificateSelector
+              selectedSetId={step.selectedCertificateSetId}
+              onSelect={(id) => upd({ selectedCertificateSetId: id })}
+            />
+          </div>
+
+          {/* ── HTTP Fields ── */}
+          {(step.requestType || 'HTTP') === 'HTTP' && (
+            <>
+              {/* Method + URL */}
+              <div className="editor-method-url">
+                <select className="form-input editor-method-sel" value={step.request?.method || 'GET'}
+                  onChange={e => updReq({ method: e.target.value })}>
+                  {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
+                </select>
+                <input className="form-input editor-url-input"
+                  placeholder="https://{{baseUrl}}/path?q={{query}}"
+                  value={step.request?.url || ''}
+                  onChange={e => updReq({ url: e.target.value })} />
+              </div>
+
+              {/* Headers */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Headers</div>
+                {Object.entries(step.request?.headers || {}).map(([k, v], i) => (
+                  <div key={i} className="key-value-row">
+                    <input className="form-input" placeholder="Key" value={k}
+                      onChange={e => mapSet('headers', k, e.target.value, v)} />
+                    <input className="form-input" placeholder="Value or {{var}}" value={v}
+                      onChange={e => mapSet('headers', k, k, e.target.value)} />
+                    <button onClick={() => mapDel('headers', k)}>✕</button>
+                  </div>
+                ))}
+                <button className="add-row-button" onClick={() => mapAdd('headers')}>+ Header</button>
+              </div>
+
+              {/* Params */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Query Params</div>
+                {Object.entries(step.request?.params || {}).map(([k, v], i) => (
+                  <div key={i} className="key-value-row">
+                    <input className="form-input" placeholder="Key" value={k}
+                      onChange={e => mapSet('params', k, e.target.value, v)} />
+                    <input className="form-input" placeholder="Value or {{var}}" value={v}
+                      onChange={e => mapSet('params', k, k, e.target.value)} />
+                    <button onClick={() => mapDel('params', k)}>✕</button>
+                  </div>
+                ))}
+                <button className="add-row-button" onClick={() => mapAdd('params')}>+ Param</button>
+              </div>
+
+              {/* Body */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Body</div>
+                <select className="form-input" style={{ marginBottom: 8 }}
+                  value={step.request?.bodyType || 'json'}
+                  onChange={e => updReq({ bodyType: e.target.value })}>
+                  {BODY_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <textarea className="form-input form-textarea"
+                  placeholder={'{\n  "key": "{{variable}}"\n}'}
+                  value={step.request?.body || ''}
+                  onChange={e => updReq({ body: e.target.value })} />
+              </div>
+            </>
+          )}
+
+          {/* ── gRPC Fields ── */}
+          {step.requestType === 'GRPC' && (
+            <>
+              {/* Server Address */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Server Address</div>
+                <input className="form-input editor-url-input"
+                  placeholder="localhost:50051"
+                  value={step.grpcConfig?.url || ''}
+                  onChange={e => updGRPCConfig({ url: e.target.value })} />
+              </div>
+
+              {/* Service + Method */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Service & Method</div>
+                <input className="form-input"
+                  placeholder="package.ServiceName"
+                  value={step.grpcConfig?.service || ''}
+                  onChange={e => updGRPCConfig({ service: e.target.value })} />
+                <input className="form-input" style={{ marginTop: 8 }}
+                  placeholder="MethodName"
+                  value={step.grpcConfig?.method || ''}
+                  onChange={e => updGRPCConfig({ method: e.target.value })} />
+              </div>
+
+              {/* Call Type */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Call Type</div>
+                <select className="form-input"
+                  value={step.grpcConfig?.callType || 'unary'}
+                  onChange={e => updGRPCConfig({ callType: e.target.value })}>
+                  <option value="unary">Unary</option>
+                  <option value="server_stream">Server Stream</option>
+                  <option value="client_stream">Client Stream</option>
+                  <option value="bidirectional_stream">Bidirectional Stream</option>
+                </select>
+              </div>
+
+              {/* Message Format */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Message Format</div>
+                <select className="form-input"
+                  value={step.grpcConfig?.messageFormat || 'JSON'}
+                  onChange={e => updGRPCConfig({ messageFormat: e.target.value })}>
+                  <option value="JSON">JSON</option>
+                  <option value="BINARY">Binary</option>
+                </select>
+              </div>
+
+              {/* Message Body */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Message</div>
+                <textarea className="form-input form-textarea"
+                  placeholder={'{\n  "field": "{{variable}}"\n}'}
+                  value={step.grpcConfig?.message || ''}
+                  onChange={e => updGRPCConfig({ message: e.target.value })} />
+              </div>
+
+              {/* Metadata */}
+              <div className="editor-section">
+                <div className="editor-sec-title">Metadata</div>
+                {Object.entries(step.grpcConfig?.metadata || {}).map(([k, v], i) => (
+                  <div key={i} className="key-value-row">
+                    <input className="form-input" placeholder="Key" value={k}
+                      onChange={e => metadataSet(k, e.target.value, v)} />
+                    <input className="form-input" placeholder="Value or {{var}}" value={v}
+                      onChange={e => metadataSet(k, k, e.target.value)} />
+                    <button onClick={() => metadataDel(k)}>✕</button>
+                  </div>
+                ))}
+                <button className="add-row-button" onClick={metadataAdd}>+ Metadata</button>
+              </div>
+            </>
+          )}
+
+          {/* Extract Variables (for both HTTP and gRPC) */}
+          <div className="editor-section">
+            <div className="editor-sec-title">
+              Extract Variables
+              <span className="sec-hint"> — save parts of response as variables</span>
+            </div>
+            {(step.extractions || []).map((ex, i) => (
+              <div key={i} className="extraction-card">
+                <div className="extraction-row1">
+                  <span className="ex-label">Save as</span>
+                  <input className="form-input ex-var" placeholder="variableName"
+                    value={ex.variable || ''} onChange={e => updEx(i, { variable: e.target.value })} />
+                  <span className="ex-label">from</span>
+                  <select className="form-input ex-src" value={ex.source || 'body'}
+                    onChange={e => updEx(i, { source: e.target.value })}>
+                    <option value="body">Body</option>
+                    <option value="header">Header</option>
+                    <option value="status">Status</option>
+                  </select>
+                  {ex.source === 'header' && (
+                    <input className="form-input ex-hdr" placeholder="Header name"
+                      value={ex.header || ''} onChange={e => updEx(i, { header: e.target.value })} />
+                  )}
+                  <button className="row-del-btn" onClick={() => delEx(i)}>✕</button>
+                </div>
+                <div className="extraction-row2">
+                  <span className="ex-label">Regex</span>
+                  <input className="form-input ex-regex" placeholder='e.g. "token":"([^"]+)"'
+                    value={ex.regex || ''} onChange={e => updEx(i, { regex: e.target.value })} />
+                  <span className="ex-label">Group</span>
+                  <input className="form-input ex-grp" type="number" min="0" max="20"
+                    value={ex.matchGroup || 0}
+                    onChange={e => updEx(i, { matchGroup: parseInt(e.target.value) || 0 })} />
+                </div>
+              </div>
+            ))}
+            <button className="add-row-button" onClick={addEx}>+ Add Extraction</button>
+          </div>
+
+          {/* Assertions (for both HTTP and gRPC) */}
+          <div className="editor-section">
+            <div className="editor-sec-title">
+              Assertions
+              <span className="sec-hint"> — fail step if check does not pass</span>
+            </div>
+            {(step.assertions || []).map((a, i) => (
+              <div key={i} className="assertion-card">
+                <select className="form-input assert-src" value={a.source || 'body'}
+                  onChange={e => updAs(i, { source: e.target.value })}>
+                  <option value="body">Body</option>
+                  <option value="header">Header</option>
+                  <option value="status">Status</option>
+                </select>
+                {a.source === 'header' && (
+                  <input className="form-input assert-hdr" placeholder="Header name"
+                    value={a.header || ''} onChange={e => updAs(i, { header: e.target.value })} />
+                )}
+                <select className="form-input assert-op" value={a.operator || 'equals'}
+                  onChange={e => updAs(i, { operator: e.target.value })}>
+                  {OPERATORS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                </select>
+                <input className="form-input assert-exp" placeholder="expected or /regex/"
+                  value={a.expected || ''} onChange={e => updAs(i, { expected: e.target.value })} />
+                <button className="row-del-btn" onClick={() => delAs(i)}>✕</button>
+              </div>
+            ))}
+            <button className="add-row-button" onClick={addAs}>+ Add Assertion</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── gRPC REQUEST ──────────────────────────────────────────────────── */}
+      {step.type === 'grpc' && (
+        <div className="editor-body">
+          {/* Certificate Selector */}
+          <div className="editor-section" style={{ marginBottom: 16 }}>
+            <div className="editor-sec-title">mTLS Certificate</div>
+            <CertificateSelector
+              selectedSetId={step.selectedCertificateSetId}
+              onSelect={(id) => upd({ selectedCertificateSetId: id })}
+            />
+          </div>
+
+          {/* Server Address */}
+          <div className="editor-section">
+            <div className="editor-sec-title">Server Address</div>
             <input className="form-input editor-url-input"
-              placeholder="https://{{baseUrl}}/path?q={{query}}"
-              value={step.request?.url || ''}
-              onChange={e => updReq({ url: e.target.value })} />
+              placeholder="localhost:50051"
+              value={step.grpcConfig?.url || ''}
+              onChange={e => updGRPCConfig({ url: e.target.value })} />
           </div>
 
-          {/* Headers */}
+          {/* Service + Method */}
           <div className="editor-section">
-            <div className="editor-sec-title">Headers</div>
-            {Object.entries(step.request?.headers || {}).map(([k, v], i) => (
-              <div key={i} className="key-value-row">
-                <input className="form-input" placeholder="Key" value={k}
-                  onChange={e => mapSet('headers', k, e.target.value, v)} />
-                <input className="form-input" placeholder="Value or {{var}}" value={v}
-                  onChange={e => mapSet('headers', k, k, e.target.value)} />
-                <button onClick={() => mapDel('headers', k)}>✕</button>
-              </div>
-            ))}
-            <button className="add-row-button" onClick={() => mapAdd('headers')}>+ Header</button>
+            <div className="editor-sec-title">Service & Method</div>
+            <input className="form-input"
+              placeholder="package.ServiceName"
+              value={step.grpcConfig?.service || ''}
+              onChange={e => updGRPCConfig({ service: e.target.value })} />
+            <input className="form-input" style={{ marginTop: 8 }}
+              placeholder="MethodName"
+              value={step.grpcConfig?.method || ''}
+              onChange={e => updGRPCConfig({ method: e.target.value })} />
           </div>
 
-          {/* Params */}
+          {/* Call Type */}
           <div className="editor-section">
-            <div className="editor-sec-title">Query Params</div>
-            {Object.entries(step.request?.params || {}).map(([k, v], i) => (
-              <div key={i} className="key-value-row">
-                <input className="form-input" placeholder="Key" value={k}
-                  onChange={e => mapSet('params', k, e.target.value, v)} />
-                <input className="form-input" placeholder="Value or {{var}}" value={v}
-                  onChange={e => mapSet('params', k, k, e.target.value)} />
-                <button onClick={() => mapDel('params', k)}>✕</button>
-              </div>
-            ))}
-            <button className="add-row-button" onClick={() => mapAdd('params')}>+ Param</button>
-          </div>
-
-          {/* Body */}
-          <div className="editor-section">
-            <div className="editor-sec-title">Body</div>
-            <select className="form-input" style={{ marginBottom: 8 }}
-              value={step.request?.bodyType || 'json'}
-              onChange={e => updReq({ bodyType: e.target.value })}>
-              {BODY_TYPES.map(t => <option key={t}>{t}</option>)}
+            <div className="editor-sec-title">Call Type</div>
+            <select className="form-input"
+              value={step.grpcConfig?.callType || 'unary'}
+              onChange={e => updGRPCConfig({ callType: e.target.value })}>
+              <option value="unary">Unary</option>
+              <option value="server_stream">Server Stream</option>
+              <option value="client_stream">Client Stream</option>
+              <option value="bidirectional_stream">Bidirectional Stream</option>
             </select>
+          </div>
+
+          {/* Message Format */}
+          <div className="editor-section">
+            <div className="editor-sec-title">Message Format</div>
+            <select className="form-input"
+              value={step.grpcConfig?.messageFormat || 'JSON'}
+              onChange={e => updGRPCConfig({ messageFormat: e.target.value })}>
+              <option value="JSON">JSON</option>
+              <option value="BINARY">Binary</option>
+            </select>
+          </div>
+
+          {/* Message Body */}
+          <div className="editor-section">
+            <div className="editor-sec-title">Message</div>
             <textarea className="form-input form-textarea"
-              placeholder={'{\n  "key": "{{variable}}"\n}'}
-              value={step.request?.body || ''}
-              onChange={e => updReq({ body: e.target.value })} />
+              placeholder={'{\n  "field": "{{variable}}"\n}'}
+              value={step.grpcConfig?.message || ''}
+              onChange={e => updGRPCConfig({ message: e.target.value })} />
+          </div>
+
+          {/* Metadata */}
+          <div className="editor-section">
+            <div className="editor-sec-title">Metadata</div>
+            {Object.entries(step.grpcConfig?.metadata || {}).map(([k, v], i) => (
+              <div key={i} className="key-value-row">
+                <input className="form-input" placeholder="Key" value={k}
+                  onChange={e => metadataSet(k, e.target.value, v)} />
+                <input className="form-input" placeholder="Value or {{var}}" value={v}
+                  onChange={e => metadataSet(k, k, e.target.value)} />
+                <button onClick={() => metadataDel(k)}>✕</button>
+              </div>
+            ))}
+            <button className="add-row-button" onClick={metadataAdd}>+ Metadata</button>
           </div>
 
           {/* Extract Variables */}

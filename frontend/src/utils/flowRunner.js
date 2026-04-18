@@ -113,6 +113,73 @@ export function runAssertions(assertions, response) {
   });
 }
 
+/** Load certificate set data and attach to request object */
+async function loadCertificatesForRequest(request, selectedCertificateSetId) {
+  if (!selectedCertificateSetId) return request;
+  
+  try {
+    const certSet = await api.certificates.getSet(selectedCertificateSetId);
+    const certificateId = certSet.certificateId || certSet.CertificateID;
+    const keyId = certSet.keyId || certSet.KeyID;
+    const caCertId = certSet.caCertId || certSet.CACertID;
+    const jksId = certSet.jksId || certSet.JksID;
+    const selectedJksPassword = certSet.jksPassword || certSet.JksPassword || '';
+    
+    // Load each certificate from the set
+    const certificatePromises = [];
+    if (certificateId) {
+      certificatePromises.push(
+        api.certificates.get(certificateId)
+          .then(cert => ({ type: 'cert', cert }))
+      );
+    }
+    if (keyId) {
+      certificatePromises.push(
+        api.certificates.get(keyId)
+          .then(cert => ({ type: 'key', cert }))
+      );
+    }
+    if (caCertId) {
+      certificatePromises.push(
+        api.certificates.get(caCertId)
+          .then(cert => ({ type: 'ca', cert }))
+      );
+    }
+    if (jksId) {
+      certificatePromises.push(
+        api.certificates.get(jksId)
+          .then(cert => ({ type: 'jks', cert }))
+      );
+    }
+
+    const certs = await Promise.all(certificatePromises);
+    
+    // Assign base64-encoded content directly (backend will decode)
+    const updated = { ...request };
+    certs.forEach(({ type, cert }) => {
+      const certContent = cert.content || cert.Content;
+      if (certContent) {
+        if (type === 'cert') {
+          updated.certificateFile = certContent;  // Keep as base64
+        } else if (type === 'key') {
+          updated.keyFile = certContent;  // Keep as base64
+        } else if (type === 'ca') {
+          updated.caCertFile = certContent;  // Keep as base64
+        } else if (type === 'jks') {
+          updated.jksFile = certContent;  // Keep as base64
+          updated.jksPassword = selectedJksPassword;
+        }
+      }
+    });
+    
+    return updated;
+  } catch (err) {
+    // If certificate loading fails, return request unchanged
+    console.warn('Failed to load certificates:', err);
+    return request;
+  }
+}
+
 /**
  * Run a flow asynchronously.
  * @param {object} flow        - the flow definition (steps, variables)
@@ -148,27 +215,261 @@ export async function runFlow(flow, onUpdate, onMetrics, signal, settings = {}) 
     try {
       switch (step.type) {
 
-        // ── HTTP Request ──────────────────────────────────────────────────
+        // ── HTTP Request ────────────────────────────────────────────
         case 'request': {
-          const req = { ...settings, ...substituteRequest(step.request, variables) };
-          log('info', `→ ${req.method} ${req.url}`);
-          const reqStart = performance.now();
-          const response = await api.request.execute(req);
-          const reqMs = Math.round(performance.now() - reqStart);
-          log('info', `← HTTP ${response.statusCode} in ${reqMs} ms`);
+          const requestType = step.requestType || 'HTTP';
+          
+          if (requestType === 'HTTP') {
+            // HTTP Request
+            let req = { ...settings, ...substituteRequest(step.request, variables) };
+            
+            // Load certificates if a certificate set was selected
+            if (step.selectedCertificateSetId) {
+              req = await loadCertificatesForRequest(req, step.selectedCertificateSetId);
+            }
+            
+            log('info', `→ ${req.method} ${req.url}`);
+            const reqStart = performance.now();
+            const response = await api.request.execute(req);
+            const reqMs = Math.round(performance.now() - reqStart);
+            log('info', `← HTTP ${response.statusCode} in ${reqMs} ms`);
 
-          // Collect metrics for performance testing
+            // Collect metrics for performance testing
+            if (onMetrics) {
+              const reqBody = substituteRequest(step.request, variables);
+              const bytesRecv = Number.isFinite(response.bytesReceived)
+                ? Number(response.bytesReceived)
+                : (Number.isFinite(response.size)
+                  ? Number(response.size)
+                  : (response.body ? new Blob([response.body]).size : 0));
+              const bytesSent = Number.isFinite(response.bytesSent)
+                ? Number(response.bytesSent)
+                : (reqBody.body ? new Blob([reqBody.body]).size : 0);
+              onMetrics(step.name || `${reqBody.method} ${reqBody.url}`, {
+                responseTime: reqMs,
+                statusCode: response.statusCode,
+                bytesRecv,
+                bytesSent,
+                success: !response.error,
+              });
+            }
+
+            // Extract variables from response
+            const extractedVars = {};
+
+            // ── Auto-inject built-in variables ──────────────────────────────
+            // These are always available after any HTTP request step:
+            //   {{statusCode}}  — HTTP status code as a string, e.g. "200"
+            //   {{body}}        — full response body
+            const autoVars = {
+              'statusCode': String(response.statusCode ?? ''),
+              'body':       response.body || '',
+            };
+            Object.assign(variables, autoVars);
+            Object.assign(extractedVars, autoVars);
+            log('info', `  Auto-vars: statusCode=${autoVars['statusCode']}`);
+
+            // ── User-defined extractions ─────────────────────────────────────
+            for (const ex of step.extractions || []) {
+              if (ex.variable) {
+                const val = extractValue(ex, response);
+                variables[ex.variable] = val;
+                extractedVars[ex.variable] = val;
+                log('info', `  Extracted "${ex.variable}" = ${JSON.stringify(val)}`);
+              }
+            }
+
+            // Run assertions
+            const assertResults = runAssertions(step.assertions || [], response);
+            assertResults.forEach(r => {
+              log(r.passed ? 'info' : 'error',
+                `  Assert ${r.source}${r.header ? `[${r.header}]` : ''} ${r.operator} "${r.expected}" → ${r.passed ? 'PASS' : `FAIL (got: "${String(r.actual || '').substring(0, 80)}")`}`
+              );
+            });
+
+            const durationMs = Math.round(performance.now() - stepStart);
+            const failed = assertResults.filter(r => !r.passed);
+            const result = { response, assertionResults: assertResults, statusCode: response.statusCode, reqMs, extractedVars };
+
+            if (failed.length > 0) {
+              const msg = `${failed.length} assertion(s) failed`;
+              log('error', `✗ ${msg} — total ${durationMs} ms`);
+              onUpdate(step.id, { status: 'failed', result, error: msg, variables: { ...variables }, logs, durationMs });
+              throw new Error(msg);
+            }
+            log('info', `✓ Done in ${durationMs} ms`);
+            onUpdate(step.id, { status: 'success', result, variables: { ...variables }, logs, durationMs });
+          } else {
+            // gRPC Request
+            const grpcConfig = {
+              service: substitute(step.grpcConfig?.service || '', variables),
+              method: substitute(step.grpcConfig?.method || '', variables),
+              protoPath: step.grpcConfig?.protoPath || '',
+              protoContent: step.grpcConfig?.protoContent || '',
+              messageFormat: step.grpcConfig?.messageFormat || 'JSON',
+              callType: step.grpcConfig?.callType || 'unary',
+              metadata: {},
+              useTLS: false,
+            };
+
+            // Substitute metadata values
+            Object.entries(step.grpcConfig?.metadata || {}).forEach(([k, v]) => {
+              grpcConfig.metadata[substitute(k, variables)] = substitute(v, variables);
+            });
+
+            // Load certificates if a certificate set was selected
+            if (step.selectedCertificateSetId) {
+              const certSet = await api.certificates.getSet(step.selectedCertificateSetId);
+              const certificateId = certSet.certificateId || certSet.CertificateID;
+              const keyId = certSet.keyId || certSet.KeyID;
+              const caCertId = certSet.caCertId || certSet.CACertID;
+
+              if (certificateId) {
+                const cert = await api.certificates.get(certificateId);
+                grpcConfig.certificateFile = cert.content || cert.Content;
+              }
+              if (keyId) {
+                const key = await api.certificates.get(keyId);
+                grpcConfig.keyFile = key.content || key.Content;
+              }
+              if (caCertId) {
+                const ca = await api.certificates.get(caCertId);
+                grpcConfig.caCertFile = ca.content || ca.Content;
+              }
+              grpcConfig.useTLS = true;
+            }
+
+            // Construct the request in the format expected by the backend
+            const grpcReq = {
+              type: 'GRPC',
+              url: substitute(step.grpcConfig?.url || '', variables),
+              body: substitute(step.grpcConfig?.message || '', variables),  // Message goes in body for gRPC
+              timeout: settings.timeout || 30,  // Default 30 seconds
+              grpcConfig: grpcConfig,
+            };
+
+            log('info', `→ gRPC ${grpcConfig.service}/${grpcConfig.method} to ${grpcReq.url}`);
+            const reqStart = performance.now();
+            const response = await api.request.executeGRPC(grpcReq);
+            const reqMs = Math.round(performance.now() - reqStart);
+            log('info', `← gRPC ${response.statusCode} in ${reqMs} ms`);
+
+            // Collect metrics
+            if (onMetrics) {
+              const bytesRecv = Number.isFinite(response.bytesReceived) ? Number(response.bytesReceived) : 0;
+              const bytesSent = Number.isFinite(response.bytesSent) ? Number(response.bytesSent) : 0;
+              onMetrics(step.name || `${grpcConfig.service}/${grpcConfig.method}`, {
+                responseTime: reqMs,
+                statusCode: response.statusCode,
+                bytesRecv,
+                bytesSent,
+                success: !response.error,
+              });
+            }
+
+            // Extract variables from gRPC response
+            const extractedVars = {};
+            const autoVars = {
+              'statusCode': String(response.statusCode ?? ''),
+              'body': response.body || '',
+            };
+            Object.assign(variables, autoVars);
+            Object.assign(extractedVars, autoVars);
+            log('info', `  Auto-vars: statusCode=${autoVars['statusCode']}`);
+
+            // Extract variables
+            for (const ex of step.extractions || []) {
+              if (ex.variable) {
+                const val = extractValue(ex, response);
+                variables[ex.variable] = val;
+                extractedVars[ex.variable] = val;
+                log('info', `  Extracted "${ex.variable}" = ${JSON.stringify(val)}`);
+              }
+            }
+
+            // Run assertions
+            const assertResults = runAssertions(step.assertions || [], response);
+            assertResults.forEach(r => {
+              log(r.passed ? 'info' : 'error',
+                `  Assert ${r.source}${r.header ? `[${r.header}]` : ''} ${r.operator} "${r.expected}" → ${r.passed ? 'PASS' : `FAIL`}`
+              );
+            });
+
+            const durationMs = Math.round(performance.now() - stepStart);
+            const failed = assertResults.filter(r => !r.passed);
+            const result = { response, assertionResults: assertResults, statusCode: response.statusCode, reqMs, extractedVars };
+
+            if (failed.length > 0) {
+              const msg = `${failed.length} assertion(s) failed`;
+              log('error', `✗ ${msg} — total ${durationMs} ms`);
+              onUpdate(step.id, { status: 'failed', result, error: msg, variables: { ...variables }, logs, durationMs });
+              throw new Error(msg);
+            }
+            log('info', `✓ Done in ${durationMs} ms`);
+            onUpdate(step.id, { status: 'success', result, variables: { ...variables }, logs, durationMs });
+          }
+          break;
+        }
+
+        // ── gRPC Request ────────────────────────────────────────────
+        case 'grpc': {
+          const grpcConfig = {
+            service: substitute(step.grpcConfig?.service || '', variables),
+            method: substitute(step.grpcConfig?.method || '', variables),
+            protoPath: step.grpcConfig?.protoPath || '',
+            protoContent: step.grpcConfig?.protoContent || '',
+            messageFormat: step.grpcConfig?.messageFormat || 'JSON',
+            callType: step.grpcConfig?.callType || 'unary',
+            metadata: {},
+            useTLS: false,
+          };
+
+          // Substitute metadata values
+          Object.entries(step.grpcConfig?.metadata || {}).forEach(([k, v]) => {
+            grpcConfig.metadata[substitute(k, variables)] = substitute(v, variables);
+          });
+
+          // Load certificates if a certificate set was selected
+          if (step.selectedCertificateSetId) {
+            const certSet = await api.certificates.getSet(step.selectedCertificateSetId);
+            const certificateId = certSet.certificateId || certSet.CertificateID;
+            const keyId = certSet.keyId || certSet.KeyID;
+            const caCertId = certSet.caCertId || certSet.CACertID;
+
+            if (certificateId) {
+              const cert = await api.certificates.get(certificateId);
+              grpcConfig.certificateFile = cert.content || cert.Content;
+            }
+            if (keyId) {
+              const key = await api.certificates.get(keyId);
+              grpcConfig.keyFile = key.content || key.Content;
+            }
+            if (caCertId) {
+              const ca = await api.certificates.get(caCertId);
+              grpcConfig.caCertFile = ca.content || ca.Content;
+            }
+            grpcConfig.useTLS = true;
+          }
+
+          const grpcReq = {
+            type: 'GRPC',
+            url: substitute(step.grpcConfig?.url || '', variables),
+            body: substitute(step.grpcConfig?.message || '', variables),
+            timeout: settings.timeout || 30,
+            grpcConfig: grpcConfig,
+          };
+
+          log('info', `→ gRPC ${grpcConfig.service}/${grpcConfig.method} to ${grpcReq.url}`);
+          const reqStart = performance.now();
+          const response = await api.request.executeGRPC(grpcReq);
+          const reqMs = Math.round(performance.now() - reqStart);
+          log('info', `← gRPC ${response.statusCode} in ${reqMs} ms`);
+
+          // Collect metrics
           if (onMetrics) {
-            const reqBody = substituteRequest(step.request, variables);
-            const bytesRecv = Number.isFinite(response.bytesReceived)
-              ? Number(response.bytesReceived)
-              : (Number.isFinite(response.size)
-                ? Number(response.size)
-                : (response.body ? new Blob([response.body]).size : 0));
-            const bytesSent = Number.isFinite(response.bytesSent)
-              ? Number(response.bytesSent)
-              : (reqBody.body ? new Blob([reqBody.body]).size : 0);
-            onMetrics(step.name || `${reqBody.method} ${reqBody.url}`, {
+            const bytesRecv = Number.isFinite(response.bytesReceived) ? Number(response.bytesReceived) : 0;
+            const bytesSent = Number.isFinite(response.bytesSent) ? Number(response.bytesSent) : 0;
+            onMetrics(step.name || `${grpcConfig.service}/${grpcConfig.method}`, {
               responseTime: reqMs,
               statusCode: response.statusCode,
               bytesRecv,
@@ -177,22 +478,17 @@ export async function runFlow(flow, onUpdate, onMetrics, signal, settings = {}) 
             });
           }
 
-          // Extract variables from response
+          // Extract variables from gRPC response
           const extractedVars = {};
-
-          // ── Auto-inject built-in variables ──────────────────────────────
-          // These are always available after any HTTP request step:
-          //   {{statusCode}}  — HTTP status code as a string, e.g. "200"
-          //   {{body}}        — full response body
           const autoVars = {
             'statusCode': String(response.statusCode ?? ''),
-            'body':       response.body || '',
+            'body': response.body || '',
           };
           Object.assign(variables, autoVars);
           Object.assign(extractedVars, autoVars);
           log('info', `  Auto-vars: statusCode=${autoVars['statusCode']}`);
 
-          // ── User-defined extractions ─────────────────────────────────────
+          // Extract variables
           for (const ex of step.extractions || []) {
             if (ex.variable) {
               const val = extractValue(ex, response);
@@ -206,7 +502,7 @@ export async function runFlow(flow, onUpdate, onMetrics, signal, settings = {}) 
           const assertResults = runAssertions(step.assertions || [], response);
           assertResults.forEach(r => {
             log(r.passed ? 'info' : 'error',
-              `  Assert ${r.source}${r.header ? `[${r.header}]` : ''} ${r.operator} "${r.expected}" → ${r.passed ? 'PASS' : `FAIL (got: "${String(r.actual || '').substring(0, 80)}")`}`
+              `  Assert ${r.source}${r.header ? `[${r.header}]` : ''} ${r.operator} "${r.expected}" → ${r.passed ? 'PASS' : 'FAIL'}`
             );
           });
 

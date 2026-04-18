@@ -1,0 +1,72 @@
+{
+  "timestamp": "2026-04-18T02:03:26.099Z",
+  "baseUrl": "http://localhost:9090",
+  "headed": true,
+  "results": [
+    {
+      "test": "generator-number",
+      "result": [
+        {
+          "id": "G-01",
+          "status": "FAIL",
+          "error": "TimeoutError: page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-params-actions .add-generator')\u001b[22m\n"
+        },
+        {
+          "id": "G-02",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        }
+      ]
+    },
+    {
+      "test": "script",
+      "result": [
+        {
+          "id": "S-02",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        },
+        {
+          "id": "S-01",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        }
+      ]
+    },
+    {
+      "test": "file",
+      "result": [
+        {
+          "id": "F-02",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        },
+        {
+          "id": "F-01",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        }
+      ]
+    },
+    {
+      "test": "combined",
+      "result": [
+        {
+          "id": "V-01",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-builder') to be visible\u001b[22m\n"
+        }
+      ]
+    },
+    {
+      "test": "export",
+      "result": [
+        {
+          "id": "E-01",
+          "status": "FAIL",
+          "error": "TimeoutError: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.flow-toolbar .certificate-selector select') to be visible\u001b[22m\n"
+        }
+      ]
+    }
+  ]
+}

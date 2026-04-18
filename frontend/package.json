@@ -6,16 +6,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:parameters": "node ./scripts/smoke-parameters.mjs",
+    "smoke:parameters:headed": "node ./scripts/smoke-parameters.mjs --headed",
+    "test:e2e": "node ./tests/run-tests.mjs",
+    "test:e2e:headed": "node ./tests/run-tests.mjs --headed"
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
     "@vitejs/plugin-react": "^2.0.1",
+    "playwright-core": "^1.59.1",
     "vite": "^3.0.7"
   }
 }

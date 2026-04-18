@@ -1,0 +1,24 @@
+{
+    "status":  "PASS",
+    "launchPathUsed":  "msedge-channel",
+    "selectedCertificateSetId":  "44100f04-3889-44c4-b0c7-df9fdfe449ec",
+    "expectedCertIds":  [
+                            "19957da8-1c62-44f7-9ccc-e864d42d7027"
+                        ],
+    "certIdsFoundInZip":  [
+                              "19957da8-1c62-44f7-9ccc-e864d42d7027"
+                          ],
+    "missingExpectedCertIds":  [
+
+                               ],
+    "missingContentIds":  [
+
+                          ],
+    "zipEntries":  [
+                       "flow.json",
+                       "certificates.json"
+                   ],
+    "zipSignatureOk":  true,
+    "zipPath":  "C:\\Users\\vinod\\OneDrive\\artemis\\tmp\\ui-export-validation-20260417-205514\\flow-New Flow-1776473775920.zip",
+    "uiResultPath":  "C:\\Users\\vinod\\OneDrive\\artemis\\tmp\\ui-export-validation-20260417-205514\\ui-export-result.json"
+}

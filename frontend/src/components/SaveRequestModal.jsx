@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRequest } from '../context/RequestContext';
 import { useCollections } from '../hooks';
 import { useToast } from '../context/ToastContext';
@@ -12,6 +12,21 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
   const [selectedCollection, setSelectedCollection] = useState('');
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setRequestName(request?.name || '');
+
+    if (request?.id) {
+      const matchedCollection = collections?.find(col =>
+        (col.requests || []).some(savedReq => savedReq?.id === request.id)
+      );
+      setSelectedCollection(matchedCollection?.id || '');
+    } else {
+      setSelectedCollection('');
+    }
+  }, [isOpen, request?.id, request?.name, collections]);
 
   const handleSave = async () => {
     if (!requestName.trim()) {
@@ -27,10 +42,10 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
       const savedRequest = {
         ...request,
         name: requestName,
-        id: `req-${Date.now()}`,
+        id: request?.id || `req-${Date.now()}`,
       };
       await api.collections.addRequest(selectedCollection, savedRequest);
-      showToast('Request saved successfully', 'success');
+      showToast(request?.id ? 'Request updated successfully' : 'Request saved successfully', 'success');
       setRequestName('');
       setSelectedCollection('');
       onClose();

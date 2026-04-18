@@ -1,0 +1,30 @@
+﻿{
+    "selectedCertificateSetId":  "44100f04-3889-44c4-b0c7-df9fdfe449ec",
+    "certificateSet":  {
+                           "id":  "44100f04-3889-44c4-b0c7-df9fdfe449ec",
+                           "name":  "sdff",
+                           "description":  "sdfdf",
+                           "certificateId":  "",
+                           "keyId":  "",
+                           "caCertId":  "",
+                           "jksId":  "19957da8-1c62-44f7-9ccc-e864d42d7027",
+                           "jksPassword":  "artemis123",
+                           "createdAt":  "2026-04-16T16:15:49.136098-04:00",
+                           "tags":  [
+
+                                    ]
+                       },
+    "certificates":  {
+                         "19957da8-1c62-44f7-9ccc-e864d42d7027":  {
+                                                                      "id":  "19957da8-1c62-44f7-9ccc-e864d42d7027",
+                                                                      "name":  "test2",
+                                                                      "type":  "jks",
+                                                                      "content":  "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",
+                                                                      "filename":  "client.jks",
+                                                                      "createdAt":  "2026-04-16T15:58:36.6359522-04:00",
+                                                                      "tags":  [
+
+                                                                               ]
+                                                                  }
+                     }
+}

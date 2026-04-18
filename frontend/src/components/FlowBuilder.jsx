@@ -3,6 +3,16 @@ import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { useRequest } from '../context/RequestContext';
 import { runFlow } from '../utils/flowRunner';
+import { createFlowZip, parseFlowZip, validateFlowJson, readZipFile } from '../utils/flowExport';
+import {
+  createGeneratorParameterDefinition,
+  createParameterDefinition,
+  createScriptParameterDefinition,
+  parseParameterFile,
+  resolveFlowParameters,
+  summarizeParameterRows,
+} from '../utils/flowParameters';
+import CertificateSelector from './CertificateSelector';
 import FlowStepEditor from './FlowStepEditor';
 import MetricsTable from './MetricsTable';
 
@@ -14,6 +24,7 @@ const FLOW_DISCOVERY_PREFS_KEY = 'artemis.flowBuilder.discovery.v1';
 const STEP_TYPES = [
   { type: 'start',        icon: '▶',  label: 'Start',          color: '#059669' },
   { type: 'request',      icon: '🌐', label: 'HTTP Request',  color: '#3b82f6' },
+  { type: 'grpc',         icon: '⚙️', label: 'gRPC Request',   color: '#8b5cf6' },
   { type: 'condition',    icon: '🔀', label: 'Condition',      color: '#f59e0b' },
   { type: 'loop',         icon: '🔁', label: 'Loop',           color: '#8b5cf6' },
   { type: 'delay',        icon: '⏱',  label: 'Delay',          color: '#6b7280' },
@@ -42,7 +53,8 @@ function mkStep(type, x, y) {
   const base = { id, type, enabled: true, x: x ?? 80, y: y ?? 80 };
   switch (type) {
     case 'start':        return { ...base, name: 'Start', mode: 'functional', numUsers: 1, rampUpSeconds: 0, durationMode: 'duration', durationSeconds: 60, transactionsCount: 1 };
-    case 'request':      return { ...base, name: 'HTTP Request', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, extractions: [], assertions: [] };
+    case 'request':      return { ...base, name: 'HTTP Request', requestType: 'HTTP', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, grpcConfig: { service: '', method: '', protoContent: '', protoPath: '', messageFormat: 'JSON', metadata: {}, callType: 'unary', useTLS: false, certificateFile: null, keyFile: null, caCertFile: null }, extractions: [], assertions: [] };
+    case 'grpc':         return { ...base, name: 'gRPC Request', requestType: 'GRPC', request: { method: 'GET', url: '', headers: {}, params: {}, body: '', bodyType: 'json' }, grpcConfig: { url: '', service: '', method: '', message: '', protoContent: '', protoPath: '', messageFormat: 'JSON', metadata: {}, callType: 'unary', useTLS: false, certificateFile: null, keyFile: null, caCertFile: null }, extractions: [], assertions: [] };
     case 'condition':    return { ...base, name: 'Condition', condition: { left: '', operator: 'equals', right: '' }, thenSteps: [], elseSteps: [] };
     case 'loop':         return { ...base, name: 'Loop', loopType: 'count', loopCount: 3, loopCondition: { left: '', operator: 'equals', right: '' }, loopSteps: [] };
     case 'delay':        return { ...base, name: 'Delay', delayMs: 1000 };
@@ -61,6 +73,7 @@ function mkFlow() {
     steps: [startStep],
     edges: [],
     variables: {},
+    parameters: [],
   };
 }
 
@@ -70,7 +83,11 @@ function toEditableFlow(flow) {
     x: s.x > 0 ? s.x : 80 + (i % 3) * (NODE_W + 60),
     y: s.y > 0 ? s.y : 80 + Math.floor(i / 3) * (NODE_H + 60),
   }));
-  return { ...JSON.parse(JSON.stringify({ ...flow, steps })), edges: flow?.edges || [] };
+  return {
+    ...JSON.parse(JSON.stringify({ ...flow, steps })),
+    edges: flow?.edges || [],
+    parameters: Array.isArray(flow?.parameters) ? flow.parameters : [],
+  };
 }
 
 function readLastFlowState() {
@@ -195,6 +212,7 @@ function sanitizeForApi(value) {
 function stepDesc(step) {
   switch (step.type) {
     case 'request':      return step.request ? `${step.request.method} ${step.request.url || '—'}` : '';
+    case 'grpc':         return step.grpcConfig ? `${step.grpcConfig.service || '…'}/${step.grpcConfig.method || '…'}` : '';
     case 'condition':    return step.condition ? `IF ${step.condition.left || '…'} ${step.condition.operator} ${step.condition.right || '…'}` : '';
     case 'loop':         return step.loopType === 'while' ? `While ${step.loopCondition?.left || '…'}` : `Repeat ${step.loopCount || 0}×`;
     case 'delay':        return `Wait ${step.delayMs || 0} ms`;
@@ -431,10 +449,11 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
 
       {/* Status */}
       <div className="fn-status">
-        {st === 'running' && <span className="spin-icon" style={{ color: '#3b82f6' }}>⟳</span>}
-        {st === 'success' && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>}
-        {st === 'failed'  && <span style={{ color: '#dc2626', fontWeight: 700 }}>✗</span>}
-        {st === 'skipped' && <span style={{ color: '#94a3b8' }}>↷</span>}
+        {step.enabled === false && <span style={{ color: '#64748b', fontWeight: 700 }} title="Step disabled">⏸</span>}
+        {step.enabled !== false && st === 'running' && <span className="spin-icon" style={{ color: '#3b82f6' }}>⟳</span>}
+        {step.enabled !== false && st === 'success' && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>}
+        {step.enabled !== false && st === 'failed'  && <span style={{ color: '#dc2626', fontWeight: 700 }}>✗</span>}
+        {step.enabled !== false && st === 'skipped' && <span style={{ color: '#94a3b8' }}>↷</span>}
       </div>
 
       {/* Delete */}
@@ -459,7 +478,7 @@ function StepNode({ step, selected, stepStatus = {}, onSelect, onDelete, onMoveS
 // ── FlowBuilder ───────────────────────────────────────────────────────────────
 export default function FlowBuilder({ onClose }) {
   const { showToast } = useToast();
-  const { request } = useRequest();
+  const { request, setCertificateSetId } = useRequest();
   const canvasWrapRef = useRef(null);
 
   const [flows,        setFlows]        = useState([]);
@@ -473,10 +492,18 @@ export default function FlowBuilder({ onClose }) {
   const [flowViewState, setFlowViewState] = useState({}); // { [flowId]: { minimized: bool, targetId: string|null } }
   const [nodeMenu, setNodeMenu] = useState(null); // { x, y, stepId }
   const [canvasMenu, setCanvasMenu] = useState(null); // { x, y, cx, cy }
+  const [selectedFlowCertificateSetId, setSelectedFlowCertificateSetId] = useState(() => request?.selectedCertificateSetId || null);
   const abortRef = useRef(null);
 
   const [showVars,     setShowVars]     = useState(false);
+  const [showParameters, setShowParameters] = useState(false);
   const [showAddMenu,  setShowAddMenu]  = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const flowImportRef = useRef(null);
+  const parameterFileInputRef = useRef(null);
   const prefs = useMemo(() => readFlowDiscoveryPrefs(), []);
   const [flowQuery, setFlowQuery] = useState(prefs.query);
   const [debouncedFlowQuery, setDebouncedFlowQuery] = useState(prefs.query.trim().toLowerCase());
@@ -484,6 +511,9 @@ export default function FlowBuilder({ onClose }) {
   const [flowSearchMode, setFlowSearchMode] = useState(prefs.searchMode);
   const [resultCursor, setResultCursor] = useState(0);
   const flowSearchRef = useRef(null);
+
+  // FlowBuilder keeps its own active certificate selection (seeded from RequestContext at mount).
+  const activeCertificateSetId = selectedFlowCertificateSetId;
 
   // Connection drawing
   const connectFromRef = useRef(null);   // { fromId, fromLabel }
@@ -713,6 +743,110 @@ export default function FlowBuilder({ onClose }) {
     } catch (e) { showToast(`Delete failed: ${e.message}`, 'error'); }
   }
 
+  async function handleExportFlow() {
+    try {
+      setIsExporting(true);
+      const flowData = sanitizeForApi(activeFlow);
+      
+      // Collect certificate data from the active global selection (FlowBuilder selector first, RequestContext fallback)
+      const certificatesData = {};
+      if (activeCertificateSetId) {
+        try {
+          const certSet = await api.certificates.getSet(activeCertificateSetId);
+          if (certSet) {
+            certificatesData.selectedCertificateSetId = activeCertificateSetId;
+            certificatesData.certificateSet = certSet;
+
+            // Fetch full content for each certificate referenced by the set
+            const certIds = [
+              certSet.certificateId || certSet.CertificateID,
+              certSet.keyId || certSet.KeyID,
+              certSet.caCertId || certSet.CACertID,
+              certSet.jksId || certSet.JksID,
+            ].filter(Boolean);
+            const certContents = {};
+            await Promise.all(certIds.map(async (certId) => {
+              try {
+                const cert = await api.certificates.get(certId);
+                if (cert) certContents[certId] = cert;
+              } catch (err) {
+                console.warn(`Could not fetch certificate ${certId}:`, err);
+              }
+            }));
+            if (Object.keys(certContents).length > 0) {
+              certificatesData.certificates = certContents;
+            }
+          }
+        } catch (err) {
+          console.warn('Could not fetch selected certificate set:', err);
+          showToast('Warning: Selected certificate set not found, skipping from export', 'warning');
+        }
+      }
+      
+      // Collect data files referenced in parameterization
+      const dataFiles = {};
+      
+      // Create and download ZIP
+      await createFlowZip(flowData, certificatesData, dataFiles);
+      showToast('Flow exported successfully ✓', 'success');
+      setShowExportModal(false);
+    } catch (err) {
+      showToast(`Export failed: ${err.message}`, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleImportFlow(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      setIsImporting(true);
+      const result = await parseFlowZip(file);
+      
+      // Validate flow
+      const errors = validateFlowJson(result.flow);
+      if (errors.length > 0) {
+        showToast(`Import validation failed:\n${errors.join('\n')}`, 'error');
+        return;
+      }
+      
+      // Load the imported flow
+      const importedFlow = toEditableFlow(result.flow);
+      setActiveFlow(importedFlow);
+      setSelectedId(null);
+      setStepStatuses(collectIds(importedFlow.steps));
+      
+      // Restore selected certificate set if available
+      if (result.certificates?.selectedCertificateSetId) {
+        try {
+          // Restore certificates and the set into the local DB (skips if already exist)
+          const restored = await api.certificates.restore(result.certificates);
+          const restoredCertificateSetId = restored?.selectedCertificateSetId || result.certificates.selectedCertificateSetId;
+          setCertificateSetId(restoredCertificateSetId);
+          setSelectedFlowCertificateSetId(restoredCertificateSetId);
+          showToast('Flow imported with certificate set ✓', 'success');
+        } catch (certErr) {
+          console.warn('Could not restore certificates from import:', certErr);
+          // Still try to set the ID in case the certs already exist locally
+          setCertificateSetId(result.certificates.selectedCertificateSetId);
+          setSelectedFlowCertificateSetId(result.certificates.selectedCertificateSetId);
+          showToast('Flow imported (certificate restore had warnings) ✓', 'warning');
+        }
+      } else {
+        showToast('Flow imported successfully ✓', 'success');
+      }
+      
+      setShowImportModal(false);
+    } catch (err) {
+      showToast(`Import failed: ${err.message}`, 'error');
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
+    }
+  }
+
   function addStep(type) {
     const { x, y } = nextPos(activeFlow.steps);
     const step = mkStep(type, x, y);
@@ -726,6 +860,79 @@ export default function FlowBuilder({ onClose }) {
     setActiveFlow(f => ({ ...f, steps: [...f.steps, step] }));
     setSelectedId(step.id);
     setShowAddMenu(false);
+  }
+
+  // Get all step IDs connected downstream from a given step
+  function getDownstreamStepIds(stepId, flow) {
+    const downstreamIds = new Set();
+    const edges = flow.edges || [];
+    const toProcess = [stepId];
+
+    while (toProcess.length > 0) {
+      const currentId = toProcess.shift();
+      const connectedEdges = edges.filter(e => e.from === currentId);
+      
+      connectedEdges.forEach(edge => {
+        if (!downstreamIds.has(edge.to)) {
+          downstreamIds.add(edge.to);
+          toProcess.push(edge.to);
+        }
+      });
+
+      // Also check nested steps (conditions, loops)
+      const currentStep = findStep(currentId, flow.steps);
+      if (currentStep?.thenSteps) {
+        currentStep.thenSteps.forEach(s => {
+          if (!downstreamIds.has(s.id)) {
+            downstreamIds.add(s.id);
+            toProcess.push(s.id);
+          }
+        });
+      }
+      if (currentStep?.elseSteps) {
+        currentStep.elseSteps.forEach(s => {
+          if (!downstreamIds.has(s.id)) {
+            downstreamIds.add(s.id);
+            toProcess.push(s.id);
+          }
+        });
+      }
+      if (currentStep?.loopSteps) {
+        currentStep.loopSteps.forEach(s => {
+          if (!downstreamIds.has(s.id)) {
+            downstreamIds.add(s.id);
+            toProcess.push(s.id);
+          }
+        });
+      }
+    }
+
+    return downstreamIds;
+  }
+
+  // Toggle disabled status on a step and all downstream steps
+  function toggleDisableStep(stepId) {
+    setActiveFlow(f => {
+      const step = findStep(stepId, f.steps);
+      if (!step) return f;
+
+      const isCurrentlyDisabled = step.enabled === false;
+      const downstreamIds = getDownstreamStepIds(stepId, f);
+
+      const updateWithDisable = (steps, shouldDisable) => 
+        steps.map(s => ({
+          ...s,
+          enabled: s.id === stepId ? isCurrentlyDisabled : (downstreamIds.has(s.id) ? shouldDisable : s.enabled),
+          thenSteps: s.thenSteps ? updateWithDisable(s.thenSteps, shouldDisable) : s.thenSteps,
+          elseSteps: s.elseSteps ? updateWithDisable(s.elseSteps, shouldDisable) : s.elseSteps,
+          loopSteps: s.loopSteps ? updateWithDisable(s.loopSteps, shouldDisable) : s.loopSteps,
+        }));
+
+      return {
+        ...f,
+        steps: updateWithDisable(f.steps, !isCurrentlyDisabled), // If disabling, disable downstream; if enabling, enable downstream
+      };
+    });
   }
 
   function removeStep(id) {
@@ -842,8 +1049,37 @@ export default function FlowBuilder({ onClose }) {
   // ── Run / stop ────────────────────────────────────────────────────────────
   async function handleRun() {
     if (isRunning) { abortRef.current?.abort(); return; }
+
+    const {
+      localValues,
+      globalValues,
+      updatedParameters,
+      hasParameterStateChanged,
+    } = resolveFlowParameters(activeFlow.parameters || [], activeFlow.variables || {});
+
+    const runtimeVariables = {
+      ...(activeFlow.variables || {}),
+      ...globalValues,
+      ...localValues,
+    };
+
+    const hasGlobalParameterValues = Object.keys(globalValues).length > 0;
+    if (hasParameterStateChanged || hasGlobalParameterValues) {
+      setActiveFlow(f => ({
+        ...f,
+        variables: hasGlobalParameterValues ? { ...(f.variables || {}), ...globalValues } : (f.variables || {}),
+        parameters: hasParameterStateChanged ? updatedParameters : (f.parameters || []),
+      }));
+    }
+
+    const flowForRun = {
+      ...activeFlow,
+      variables: runtimeVariables,
+      parameters: hasParameterStateChanged ? updatedParameters : (activeFlow.parameters || []),
+    };
+
     setStepStatuses(collectIds(activeFlow.steps));
-    setRunVars({ ...activeFlow.variables });
+    setRunVars(runtimeVariables);
     setMetrics({}); // Reset metrics for new run
     setIsRunning(true);
     const ctrl = new AbortController();
@@ -918,6 +1154,7 @@ export default function FlowBuilder({ onClose }) {
         httpVersion: request.httpVersion,
         maxResponseSize: request.maxResponseSize,
         logLevel: request.logLevel,
+        selectedCertificateSetId: activeCertificateSetId,
       };
 
       const onUpdatePrimary = (stepId, update) => {
@@ -930,7 +1167,7 @@ export default function FlowBuilder({ onClose }) {
       };
 
       if (!isPerformance) {
-        await runFlow(activeFlow, onUpdatePrimary, onMetrics, ctrl.signal, reqSettings);
+        await runFlow(flowForRun, onUpdatePrimary, onMetrics, ctrl.signal, reqSettings);
         showToast('Flow completed ✓', 'success');
         return;
       }
@@ -957,7 +1194,7 @@ export default function FlowBuilder({ onClose }) {
           for (let i = 0; i < transactionsCount; i++) {
             if (ctrl.signal.aborted) throw new Error('Aborted');
             try {
-              await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal, reqSettings);
+              await runFlow(flowForRun, onUpdate, onMetrics, ctrl.signal, reqSettings);
             } catch (err) {
               if (err.message === 'Aborted') throw err;
               // In load mode continue remaining iterations even if a single flow run fails
@@ -968,7 +1205,7 @@ export default function FlowBuilder({ onClose }) {
 
         while (!ctrl.signal.aborted && Date.now() < testEndTs) {
           try {
-            await runFlow(activeFlow, onUpdate, onMetrics, ctrl.signal, reqSettings);
+            await runFlow(flowForRun, onUpdate, onMetrics, ctrl.signal, reqSettings);
           } catch (err) {
             if (err.message === 'Aborted') throw err;
             // Keep generating load during duration window despite per-run failures
@@ -987,6 +1224,93 @@ export default function FlowBuilder({ onClose }) {
   function addVar()                  { setActiveFlow(f => ({ ...f, variables: { ...f.variables, '': '' } })); }
   function setVar(ok, nk, v)         { setActiveFlow(f => { const m = { ...f.variables }; if (ok !== nk) delete m[ok]; m[nk] = v; return { ...f, variables: m }; }); }
   function delVar(k)                 { setActiveFlow(f => { const m = { ...f.variables }; delete m[k]; return { ...f, variables: m }; }); }
+
+  // ── Parameters ────────────────────────────────────────────────────────────
+  function setParameterField(parameterId, updates) {
+    setActiveFlow(f => ({
+      ...f,
+      parameters: (f.parameters || []).map((p) => (p.id === parameterId ? { ...p, ...updates } : p)),
+    }));
+  }
+
+  function deleteParameter(parameterId) {
+    setActiveFlow(f => ({
+      ...f,
+      parameters: (f.parameters || []).filter((p) => p.id !== parameterId),
+    }));
+  }
+
+  function setParameterGeneratorField(parameterId, field, value) {
+    setActiveFlow(f => ({
+      ...f,
+      parameters: (f.parameters || []).map((p) => {
+        if (p.id !== parameterId) return p;
+        return {
+          ...p,
+          generatorConfig: {
+            ...(p.generatorConfig || {}),
+            [field]: value,
+          },
+        };
+      }),
+    }));
+  }
+
+  function getExistingParameterVariableNames() {
+    return (activeFlow.parameters || [])
+      .map((p) => String(p?.variableName || '').trim())
+      .filter(Boolean);
+  }
+
+  function addGeneratedParameter() {
+    const parameter = createGeneratorParameterDefinition(getExistingParameterVariableNames());
+    setActiveFlow(f => ({
+      ...f,
+      parameters: [...(f.parameters || []), parameter],
+    }));
+    setShowParameters(true);
+    showToast('Generator parameter added', 'success');
+  }
+
+  function addScriptParameter() {
+    const parameter = createScriptParameterDefinition(getExistingParameterVariableNames());
+    setActiveFlow(f => ({
+      ...f,
+      parameters: [...(f.parameters || []), parameter],
+    }));
+    setShowParameters(true);
+    showToast('Script parameter added', 'success');
+  }
+
+  async function handleParameterFilesSelected(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const existingNames = new Set((activeFlow.parameters || []).map((p) => p.variableName).filter(Boolean));
+    const createdParameters = [];
+
+    for (const file of files) {
+      try {
+        const parsed = await parseParameterFile(file);
+        const parameter = createParameterDefinition(parsed, existingNames);
+        existingNames.add(parameter.variableName);
+        createdParameters.push(parameter);
+      } catch (err) {
+        showToast(`Skipped ${file.name}: ${err.message}`, 'warning');
+      }
+    }
+
+    if (createdParameters.length > 0) {
+      setActiveFlow(f => ({
+        ...f,
+        parameters: [...(f.parameters || []), ...createdParameters],
+      }));
+      setShowParameters(true);
+      showToast(`${createdParameters.length} parameter file(s) added`, 'success');
+    }
+
+    e.target.value = '';
+  }
 
   // ── Canvas coordinate helper (accounts for scroll) ────────────────────────
   function getCanvasXY(e) {
@@ -1225,6 +1549,16 @@ export default function FlowBuilder({ onClose }) {
             onChange={e => { setFlowQuery(e.target.value); setResultCursor(0); }}
             onKeyDown={handleFlowSearchKeyDown}
           />
+          <button
+            className="flow-btn"
+            onClick={() => {
+              flowSearchRef.current?.focus();
+              flowSearchRef.current?.select();
+            }}
+            title="Focus flow search"
+          >
+            🔎 Search
+          </button>
           <select className="flow-toolbar-search-select" value={flowSearchMode} onChange={e => setFlowSearchMode(e.target.value)}>
             <option value="name">Name only</option>
             <option value="name-meta">Name + metadata</option>
@@ -1241,20 +1575,16 @@ export default function FlowBuilder({ onClose }) {
           </div>
         </div>
         <div className="flow-toolbar-btns">
-          <button
-            className="flow-btn"
-            onClick={() => {
-              flowSearchRef.current?.focus();
-              flowSearchRef.current?.select();
-            }}
-            title="Focus flow search"
-          >
-            🔎 Search
-          </button>
           <button className={`flow-btn run-btn${isRunning ? ' stop' : ''}`} onClick={handleRun}>
             {isRunning ? '■ Stop' : '▶ Run'}
           </button>
+          <CertificateSelector
+            selectedSetId={selectedFlowCertificateSetId}
+            onSelect={(id) => setSelectedFlowCertificateSetId(id)}
+          />
           <button className="flow-btn" onClick={saveFlow}>💾 Save</button>
+          <button className="flow-btn" onClick={handleExportFlow} disabled={isExporting || !activeFlow.name.trim()}>📥 Export</button>
+          <button className="flow-btn" onClick={() => setShowImportModal(true)} disabled={isImporting}>📤 Import</button>
           <button className="flow-btn" onClick={resetStats} disabled={Object.keys(metrics).length === 0}>↺ Reset Stats</button>
           <button className="flow-btn" onClick={toggleFlowMinimize}>
             {isFlowMinimized ? '⤢ Expand Flow' : '⤡ Minimize Flow'}
@@ -1276,12 +1606,332 @@ export default function FlowBuilder({ onClose }) {
           </div>
           <button className="flow-btn" onClick={() => { setActiveFlow(mkFlow()); setSelectedId(null); setStepStatuses({}); }}>+ New</button>
           <button className="flow-btn danger-btn" onClick={deleteFlow} disabled={!activeFlow.id}>🗑 Del</button>
+          <button className={`flow-btn${showParameters ? ' active-btn' : ''}`} onClick={() => setShowParameters(v => !v)}>
+            📊 Parameters{(activeFlow.parameters || []).length > 0 ? ` (${(activeFlow.parameters || []).length})` : ''}
+          </button>
           <button className={`flow-btn${showVars ? ' active-btn' : ''}`} onClick={() => setShowVars(v => !v)}>
             ⚙ Vars{Object.keys(activeFlow.variables).length > 0 ? ` (${Object.keys(activeFlow.variables).length})` : ''}
           </button>
           <button className="flow-btn close-btn" onClick={onClose}>✕ Close</button>
         </div>
       </div>
+
+      <input
+        ref={parameterFileInputRef}
+        type="file"
+        accept=".csv,.dat,.txt,.xls,.xlsx"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleParameterFilesSelected}
+      />
+
+      {/* ── Parameters panel ── */}
+      {showParameters && (
+        <div className="flow-params-panel">
+          <div className="flow-params-topbar">
+            <div className="flow-vars-heading">
+              Parameters <span className="flow-vars-hint">— files, random generators, and user scripts mapped to variables</span>
+            </div>
+            <div className="flow-params-actions">
+              <button className="flow-btn flow-params-add-btn" onClick={() => parameterFileInputRef.current?.click()}>
+                + Add File
+              </button>
+              <button className="flow-btn flow-params-add-btn" onClick={addGeneratedParameter}>
+                + Add Generator
+              </button>
+              <button className="flow-btn flow-params-add-btn" onClick={addScriptParameter}>
+                + Add Script
+              </button>
+            </div>
+          </div>
+
+          <div className="flow-params-guide">
+            <div className="flow-params-guide-title">How to pass variables into script and requests</div>
+            <div className="flow-params-guide-line">1. Set <strong>Variable Name</strong> on each parameter card, for example <code>sessionId</code>.</div>
+            <div className="flow-params-guide-line">2. In requests, use <code>{'{{sessionId}}'}</code> in URL, headers, params, or body.</div>
+            <div className="flow-params-guide-line">3. In script cards, read existing variables through <code>vars</code> and return the new value.</div>
+            <pre className="flow-params-guide-code">return (vars.env || "dev") + "-" + helpers.randomInt(1000, 9999);</pre>
+            <div className="flow-params-guide-line">Script helpers: <code>helpers.randomInt</code>, <code>helpers.randomFloat</code>, <code>helpers.randomText</code>, <code>helpers.uuid</code>, <code>helpers.now</code>.</div>
+          </div>
+
+          {(activeFlow.parameters || []).length === 0 ? (
+            <div className="flow-params-empty">
+              No parameters yet. Add a file, generator, or script and assign a variable name such as {'{{myVar}}'}.
+            </div>
+          ) : (
+            (activeFlow.parameters || []).map((parameter) => {
+              const parameterKind = parameter.kind || (Array.isArray(parameter.rows) ? 'file' : (typeof parameter.scriptBody === 'string' ? 'script' : 'generator'));
+              const rows = parameterKind === 'file' && Array.isArray(parameter.rows) ? parameter.rows : [];
+              const previewRows = rows.slice(0, 200);
+              const { rowCount, columnCount } = summarizeParameterRows(rows);
+              const previewColumns = Math.min(6, Math.max(1, columnCount));
+              const generatorConfig = parameter.generatorConfig || {};
+
+              let cardName = parameter.sourceFileName || 'uploaded-file';
+              let cardMeta = `${String(parameter.sourceType || '').toUpperCase()} • ${rowCount} rows`;
+              if (parameterKind === 'generator') {
+                cardName = 'Generated Value';
+                cardMeta = `GENERATOR • ${String(parameter.generatorType || 'number').toUpperCase()}`;
+              }
+              if (parameterKind === 'script') {
+                cardName = 'Script Value';
+                cardMeta = 'SCRIPT • user-defined';
+              }
+
+              return (
+                <div key={parameter.id} className="flow-param-card">
+                  <div className="flow-param-card-header">
+                    <div className="flow-param-file-name">{cardName}</div>
+                    <div className="flow-param-file-meta">{cardMeta}</div>
+                    <button className="flow-var-del" onClick={() => deleteParameter(parameter.id)}>✕</button>
+                  </div>
+
+                  <div className="flow-param-controls">
+                    <div className="flow-param-field">
+                      <label>Variable Name</label>
+                      <input
+                        className="form-input"
+                        value={parameter.variableName || ''}
+                        placeholder="myVar"
+                        onChange={(e) => setParameterField(parameter.id, { variableName: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="flow-param-field">
+                      <label>Scope</label>
+                      <select
+                        className="form-input"
+                        value={parameter.scope || 'local'}
+                        onChange={(e) => setParameterField(parameter.id, { scope: e.target.value })}
+                      >
+                        <option value="local">Local to script run</option>
+                        <option value="global">Global to flow</option>
+                      </select>
+                    </div>
+
+                    {parameterKind === 'file' && (
+                      <>
+                        <div className="flow-param-field">
+                          <label>Pick Value</label>
+                          <select
+                            className="form-input"
+                            value={parameter.pickMode || 'start'}
+                            onChange={(e) => setParameterField(parameter.id, { pickMode: e.target.value })}
+                          >
+                            <option value="start">Default from start (next each run)</option>
+                            <option value="index">Specific row (1st, 10th, ...)</option>
+                            <option value="random">Random row</option>
+                          </select>
+                        </div>
+
+                        {parameter.pickMode === 'index' && (
+                          <div className="flow-param-field flow-param-index-field">
+                            <label>Row Number</label>
+                            <input
+                              className="form-input"
+                              type="number"
+                              min="1"
+                              max={Math.max(1, rowCount)}
+                              value={parameter.pickIndex || 1}
+                              onChange={(e) => setParameterField(parameter.id, { pickIndex: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {parameterKind === 'generator' && (
+                      <>
+                        <div className="flow-param-field">
+                          <label>Generator Type</label>
+                          <select
+                            className="form-input"
+                            value={parameter.generatorType || 'number'}
+                            onChange={(e) => setParameterField(parameter.id, { generatorType: e.target.value })}
+                          >
+                            <option value="number">Random Number (range)</option>
+                            <option value="uuid">Random UUID</option>
+                            <option value="time">Current Time (format)</option>
+                            <option value="text">Random Text (length range)</option>
+                          </select>
+                        </div>
+
+                        {(parameter.generatorType || 'number') === 'number' && (
+                          <>
+                            <div className="flow-param-field">
+                              <label>Min Number</label>
+                              <input
+                                className="form-input"
+                                type="number"
+                                value={generatorConfig.numberMin ?? 0}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'numberMin', e.target.value)}
+                              />
+                            </div>
+                            <div className="flow-param-field">
+                              <label>Max Number</label>
+                              <input
+                                className="form-input"
+                                type="number"
+                                value={generatorConfig.numberMax ?? 100}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'numberMax', e.target.value)}
+                              />
+                            </div>
+                            <div className="flow-param-field">
+                              <label>Number Mode</label>
+                              <select
+                                className="form-input"
+                                value={generatorConfig.numberInteger === false ? 'decimal' : 'integer'}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'numberInteger', e.target.value !== 'decimal')}
+                              >
+                                <option value="integer">Integer</option>
+                                <option value="decimal">Decimal</option>
+                              </select>
+                            </div>
+                            {generatorConfig.numberInteger === false && (
+                              <div className="flow-param-field">
+                                <label>Decimal Places</label>
+                                <input
+                                  className="form-input"
+                                  type="number"
+                                  min="0"
+                                  max="8"
+                                  value={generatorConfig.numberPrecision ?? 2}
+                                  onChange={(e) => setParameterGeneratorField(parameter.id, 'numberPrecision', e.target.value)}
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {(parameter.generatorType || 'number') === 'time' && (
+                          <>
+                            <div className="flow-param-field">
+                              <label>Time Format</label>
+                              <select
+                                className="form-input"
+                                value={generatorConfig.timeFormat || 'iso'}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'timeFormat', e.target.value)}
+                              >
+                                <option value="iso">ISO 8601</option>
+                                <option value="unix_seconds">UNIX Seconds</option>
+                                <option value="unix_millis">UNIX Milliseconds</option>
+                                <option value="utc">UTC String</option>
+                                <option value="custom">Custom Pattern</option>
+                              </select>
+                            </div>
+                            {(generatorConfig.timeFormat || 'iso') === 'custom' && (
+                              <div className="flow-param-field flow-param-wide">
+                                <label>Custom Pattern</label>
+                                <input
+                                  className="form-input"
+                                  placeholder="YYYY-MM-DD HH:mm:ss"
+                                  value={generatorConfig.timeCustomFormat || 'YYYY-MM-DD HH:mm:ss'}
+                                  onChange={(e) => setParameterGeneratorField(parameter.id, 'timeCustomFormat', e.target.value)}
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {(parameter.generatorType || 'number') === 'text' && (
+                          <>
+                            <div className="flow-param-field">
+                              <label>Min Length</label>
+                              <input
+                                className="form-input"
+                                type="number"
+                                min="1"
+                                value={generatorConfig.textMinLength ?? 8}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'textMinLength', e.target.value)}
+                              />
+                            </div>
+                            <div className="flow-param-field">
+                              <label>Max Length</label>
+                              <input
+                                className="form-input"
+                                type="number"
+                                min="1"
+                                value={generatorConfig.textMaxLength ?? 16}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'textMaxLength', e.target.value)}
+                              />
+                            </div>
+                            <div className="flow-param-field">
+                              <label>Character Set</label>
+                              <select
+                                className="form-input"
+                                value={generatorConfig.textCharset || 'alphanumeric'}
+                                onChange={(e) => setParameterGeneratorField(parameter.id, 'textCharset', e.target.value)}
+                              >
+                                <option value="alphanumeric">A-Z, a-z, 0-9</option>
+                                <option value="alphabetic">A-Z, a-z</option>
+                                <option value="numeric">0-9</option>
+                                <option value="hex">0-9, a-f</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {parameterKind === 'script' && (
+                    <div className="flow-param-script-wrap">
+                      <div className="flow-param-field flow-param-wide">
+                        <label>Script</label>
+                        <textarea
+                          className="form-input flow-param-script-input"
+                          value={parameter.scriptBody || ''}
+                          onChange={(e) => setParameterField(parameter.id, { scriptBody: e.target.value })}
+                          placeholder="return (vars.userId || 'guest') + '-' + helpers.randomInt(100, 999);"
+                        />
+                      </div>
+                      <div className="flow-param-script-hint">
+                        Use <code>vars</code> for existing values and return one value. Example: <code>return helpers.now('iso');</code>
+                      </div>
+                    </div>
+                  )}
+
+                  {parameterKind === 'file' && (
+                    <div>
+                      <div className="flow-param-preview-title">
+                        Data Preview (scrollable) — showing {previewRows.length} of {rowCount} rows
+                      </div>
+                      <div className="flow-param-preview-wrap">
+                        <table className="flow-param-preview-table">
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              {Array.from({ length: previewColumns }).map((_, idx) => (
+                                <th key={`col-${parameter.id}-${idx}`}>Value {idx + 1}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {previewRows.map((row, rowIndex) => (
+                              <tr key={`row-${parameter.id}-${rowIndex}`}>
+                                <td>{rowIndex + 1}</td>
+                                {Array.from({ length: previewColumns }).map((_, colIndex) => (
+                                  <td key={`cell-${parameter.id}-${rowIndex}-${colIndex}`}>{row[colIndex] || ''}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {parameter.lastError && (
+                    <div className="flow-param-error">
+                      Last run error: {parameter.lastError}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* ── Variables panel ── */}
       {showVars && (
@@ -1547,6 +2197,17 @@ export default function FlowBuilder({ onClose }) {
                   👁 Open Details
                 </button>
                 <button
+                  className="flow-btn"
+                  style={{ width: '100%', textAlign: 'left', marginBottom: 6 }}
+                  disabled={contextStep.type === 'start' || contextStep.type === 'end'}
+                  onClick={() => {
+                    toggleDisableStep(contextStep.id);
+                    closeNodeContextMenu();
+                  }}
+                >
+                  {contextStep.enabled === false ? '▶ Enable Step' : '⏸ Disable Step'}
+                </button>
+                <button
                   className="flow-btn danger-btn"
                   style={{ width: '100%', textAlign: 'left' }}
                   disabled={contextStep.type === 'start'}
@@ -1685,6 +2346,105 @@ export default function FlowBuilder({ onClose }) {
             📊 Performance Metrics {isRunning && <span style={{color: '#fbbf24'}}>● Live</span>}
           </div>
           <MetricsTable metrics={metrics} flowName={activeFlow.name || 'untitled'} />
+        </div>
+      )}
+
+      {/* ── Import Flow Modal ── */}
+      {showImportModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: '8px',
+            padding: '24px',
+            minWidth: '400px',
+            maxWidth: '500px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px', color: 'var(--text-primary)' }}>
+              📤 Import Flow
+            </h3>
+            
+            <div style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+              Select a ZIP file containing the flow configuration. The ZIP should include:
+              <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                <li>flow.json — Flow definition</li>
+                <li>certificates.json — Certificate configurations (optional)</li>
+                <li>data/ folder — Data files (optional)</li>
+              </ul>
+            </div>
+
+            <div style={{
+              border: '2px dashed var(--border-color)',
+              borderRadius: '6px',
+              padding: '20px',
+              textAlign: 'center',
+              cursor: isImporting ? 'not-allowed' : 'pointer',
+              opacity: isImporting ? 0.5 : 1,
+              backgroundColor: 'var(--bg-secondary)',
+              marginBottom: '16px',
+            }}
+            onClick={() => !isImporting && flowImportRef.current?.click()}
+            >
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>📁</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Click to select file or drag & drop
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                Accepts .zip files only
+              </div>
+            </div>
+
+            <input
+              ref={flowImportRef}
+              type="file"
+              accept=".zip"
+              onChange={handleImportFlow}
+              style={{ display: 'none' }}
+              disabled={isImporting}
+            />
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowImportModal(false)}
+                disabled={isImporting}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  cursor: isImporting ? 'not-allowed' : 'pointer',
+                  opacity: isImporting ? 0.5 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => flowImportRef.current?.click()}
+                disabled={isImporting}
+                className="send-button"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  cursor: isImporting ? 'not-allowed' : 'pointer',
+                  opacity: isImporting ? 0.5 : 1,
+                }}
+              >
+                {isImporting ? '⟳ Importing...' : '📥 Select ZIP'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

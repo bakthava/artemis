@@ -1,0 +1,14 @@
+{
+  "url": "http://localhost:9090",
+  "timestamp": "2026-04-18T02:08:22.433Z",
+  "selectors": {
+    "button:has-text(\"Flow\")": 1,
+    "[role=\"button\"][title*=\"Flow\"]": 0,
+    ".flow-builder": 0,
+    ".flow-params-actions .add-generator": 0,
+    ".flow-toolbar .certificate-selector select": 0,
+    ".flow-parameters-panel": 0,
+    ".flow-toolbar": 0
+  },
+  "navButtons": []
+}

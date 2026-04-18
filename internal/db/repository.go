@@ -1,9 +1,9 @@
 package db
 
 import (
+	"artemis/internal/models"
 	"encoding/json"
 	"fmt"
-	"artemis/internal/models"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,7 +233,16 @@ func (r *CollectionRepository) AddRequest(collectionID string, request *models.R
 	reqListKey := fmt.Sprintf("collection:%s:requests", collectionID)
 	_ = r.db.GetJSON(reqListKey, &requestIDs) // Ignore error if list doesn't exist
 
-	requestIDs = append(requestIDs, request.ID)
+	exists := false
+	for _, id := range requestIDs {
+		if id == request.ID {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		requestIDs = append(requestIDs, request.ID)
+	}
 	return r.db.SetJSON(reqListKey, requestIDs)
 }
 

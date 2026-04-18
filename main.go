@@ -71,6 +71,8 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("PUT /api/flows/{id}", s.handleUpdateFlow)
 	s.router.HandleFunc("DELETE /api/flows/{id}", s.handleDeleteFlow)
 	s.router.HandleFunc("POST /api/flows/{id}/export", s.handleExportFlowToFile)
+	s.router.HandleFunc("POST /api/flows/export/zip", s.handleExportFlowZip)
+	s.router.HandleFunc("POST /api/flows/import/zip", s.handleImportFlowZip)
 
 	// Request execution endpoint
 	s.router.HandleFunc("POST /api/request/execute", s.handleExecuteRequest)
@@ -90,6 +92,7 @@ func (s *HTTPServer) setupRoutes() {
 	s.router.HandleFunc("GET /api/certificates", s.handleListCertificates)
 	s.router.HandleFunc("GET /api/certificates/{id}", s.handleGetCertificate)
 	s.router.HandleFunc("DELETE /api/certificates/{id}", s.handleDeleteCertificate)
+	s.router.HandleFunc("POST /api/certificates/restore", s.handleRestoreCertificates)
 	s.router.HandleFunc("GET /api/certificate-sets", s.handleListCertificateSets)
 	s.router.HandleFunc("POST /api/certificate-sets", s.handleCreateCertificateSet)
 	s.router.HandleFunc("GET /api/certificate-sets/{id}", s.handleGetCertificateSet)
@@ -528,6 +531,76 @@ func (s *HTTPServer) handleExportFlowToFile(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]string{"filePath": filePath})
 }
 
+func (s *HTTPServer) handleExportFlowZip(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	
+	// Parse multipart form to get flow.json, certificates.json, and data files
+	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	
+	// Get flow data
+	flowFile, _, err := r.FormFile("flow")
+	if err != nil {
+		http.Error(w, "Missing flow file", http.StatusBadRequest)
+		return
+	}
+	defer flowFile.Close()
+	
+	// Read flow JSON
+	var flowData map[string]interface{}
+	if err := json.NewDecoder(flowFile).Decode(&flowData); err != nil {
+		http.Error(w, "Invalid flow JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	
+	// Create ZIP file in memory
+	zipData, err := s.app.CreateFlowZip(flowData, r.MultipartForm)
+	if err != nil {
+		http.Error(w, "Failed to create ZIP: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return ZIP file
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=flow-export.zip")
+	w.Write(zipData)
+}
+
+func (s *HTTPServer) handleImportFlowZip(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	
+	// Parse multipart form to get ZIP file
+	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	
+	// Get ZIP file
+	zipFile, _, err := r.FormFile("zipFile")
+	if err != nil {
+		http.Error(w, "Missing ZIP file", http.StatusBadRequest)
+		return
+	}
+	defer zipFile.Close()
+	
+	// Parse ZIP and extract data
+	flowData, certificatesData, dataFiles, err := s.app.ParseFlowZip(zipFile)
+	if err != nil {
+		http.Error(w, "Failed to parse ZIP: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	
+	// Return extracted data
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"flow":         flowData,
+		"certificates": certificatesData,
+		"dataFiles":    dataFiles,
+	})
+}
+
 func (s *HTTPServer) handleTestJKS(w http.ResponseWriter, r *http.Request) {
 	s.handleCORS(w, r)
 	var req struct {
@@ -775,6 +848,45 @@ func (s *HTTPServer) handleDeleteCertificateSet(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleRestoreCertificates restores exported certificate data (certificates + set) into the local DB
+func (s *HTTPServer) handleRestoreCertificates(w http.ResponseWriter, r *http.Request) {
+	s.handleCORS(w, r)
+	var payload struct {
+		SelectedCertificateSetID string                            `json:"selectedCertificateSetId"`
+		CertificateSet           *models.CertificateSet            `json:"certificateSet"`
+		Certificates             map[string]*models.Certificate    `json:"certificates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Restore each individual certificate (only if it does not already exist)
+	for _, cert := range payload.Certificates {
+		if _, err := s.app.certificateRepository.GetCertificate(cert.ID); err != nil {
+			if saveErr := s.app.certificateRepository.SaveCertificate(cert); saveErr != nil {
+				http.Error(w, "Failed to save certificate: "+saveErr.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	// Restore certificate set (only if it does not already exist)
+	if payload.CertificateSet != nil {
+		if _, err := s.app.certificateRepository.GetCertificateSet(payload.CertificateSet.ID); err != nil {
+			if saveErr := s.app.certificateRepository.SaveCertificateSet(payload.CertificateSet); saveErr != nil {
+				http.Error(w, "Failed to save certificate set: "+saveErr.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"selectedCertificateSetId": payload.SelectedCertificateSetID,
+	})
 }
 
 func (s *HTTPServer) handleStatic(w http.ResponseWriter, r *http.Request) {

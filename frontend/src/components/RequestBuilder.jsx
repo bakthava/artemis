@@ -94,11 +94,9 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
       // Start with null/empty values
       let certificateFile = null;
       let keyFile = null;
+      let caCertFile = null;
       let jksFile = null;
       let jksPassword = '';
-      let grpcCertificateFile = null;
-      let grpcKeyFile = null;
-      let grpcCACertFile = null;
 
       // Only load certificates if a set was explicitly selected
       if (request.selectedCertificateSetId) {
@@ -146,12 +144,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
             if (certContent) {
               if (type === 'cert') {
                 certificateFile = certContent;  // Keep as base64
-                grpcCertificateFile = certContent;  // Keep as base64
               } else if (type === 'key') {
                 keyFile = certContent;  // Keep as base64
-                grpcKeyFile = certContent;  // Keep as base64
               } else if (type === 'ca') {
-                grpcCACertFile = certContent;  // Keep as base64
+                caCertFile = certContent;  // Keep as base64
               } else if (type === 'jks') {
                 jksFile = certContent;  // Keep as base64
               }
@@ -186,9 +182,9 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
             metadata: request.grpcConfig.metadata,
             callType: request.grpcConfig.callType,
             useTLS: request.grpcConfig.useTLS,
-            certificateFile: grpcCertificateFile,
-            keyFile: grpcKeyFile,
-            caCertFile: grpcCACertFile,
+            certificateFile: certificateFile,
+            keyFile: keyFile,
+            caCertFile: caCertFile,
           },
         });
       } else {
@@ -589,55 +585,10 @@ function RequestBuilder({ onResponse, loading, setLoading, urlInputRef, onReques
                 Use TLS
               </label>
               <div className="form-hint" style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
-                Enable for TLS/mTLS connections. Leave unchecked for plaintext (e.g. port 50051).
+                  Enable for TLS/mTLS connections. Leave unchecked for plaintext (e.g. port 50051).
+                  Use the shared "Certificate Set" selector at the top for both HTTPS and gRPC TLS.
               </div>
             </div>
-
-            {/* TLS Certificate Files (shown when TLS is enabled) */}
-            {request.grpcConfig?.useTLS && (
-              <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: '13px' }}>TLS Configuration</h4>
-                
-                {/* Client Certificate */}
-                <div className="form-group">
-                  <label className="form-label">Client Certificate (optional)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Path to client certificate file (.pem, .crt, .cer)"
-                    value={request.grpcConfig?.certificateFile || ''}
-                    onChange={(e) => setGRPCConfig({ certificateFile: e.target.value })}
-                  />
-                  <div className="form-hint">For mTLS, provide the client certificate file path</div>
-                </div>
-
-                {/* Client Key */}
-                <div className="form-group">
-                  <label className="form-label">Client Key (optional)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Path to client key file (.pem, .key)"
-                    value={request.grpcConfig?.keyFile || ''}
-                    onChange={(e) => setGRPCConfig({ keyFile: e.target.value })}
-                  />
-                  <div className="form-hint">Private key file (used with client certificate)</div>
-                </div>
-
-                {/* CA Certificate */}
-                <div className="form-group">
-                  <label className="form-label">CA Certificate (optional)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Path to CA certificate file (.pem, .crt)"
-                    value={request.grpcConfig?.caCertFile || ''}
-                    onChange={(e) => setGRPCConfig({ caCertFile: e.target.value })}
-                  />
-                  <div className="form-hint">Server CA certificate for certificate validation</div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 

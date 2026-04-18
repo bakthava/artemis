@@ -1,0 +1,34 @@
+{
+    "status":  "PASS",
+    "apiCertificateSetsStatus":  200,
+    "apiCertificatesStatus":  200,
+    "selectedCertificateSetId":  "44100f04-3889-44c4-b0c7-df9fdfe449ec",
+    "expectedCertIds":  [
+                            "19957da8-1c62-44f7-9ccc-e864d42d7027"
+                        ],
+    "certIdsFoundInZip":  [
+                              "19957da8-1c62-44f7-9ccc-e864d42d7027"
+                          ],
+    "missingContentIds":  [
+
+                          ],
+    "zipEntries":  [
+                       "flow.json",
+                       "certificates.json"
+                   ],
+    "checks":  {
+                   "selectedCertificateSetIdExists":  true,
+                   "selectedCertificateSetIdMatches":  true,
+                   "certificateSetExists":  true,
+                   "certificatesExists":  true,
+                   "expectedReferencedCertIdCount":  1,
+                   "foundCertIdCountInZip":  1,
+                   "missingExpectedCertIds":  [
+
+                                              ],
+                   "missingContentIds":  [
+
+                                         ]
+               },
+    "tempDir":  "C:\\Users\\vinod\\OneDrive\\artemis\\tmp\\export-validation-20260417-205149"
+}

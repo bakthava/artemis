@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-function Header({ onSave, onSettings, onFlow, onCertificates, flowActive }) {
+function Header({ onSave, onSettings, onFlow, onCertificates, flowActive, onExportEnv, onImportEnv, onExportProject, onImportProject }) {
   const [isDark, setIsDark] = useState(() =>
     localStorage.getItem('artemis-theme') === 'dark'
   );
@@ -15,6 +15,9 @@ function Header({ onSave, onSettings, onFlow, onCertificates, flowActive }) {
     }
   }, [isDark]);
 
+  const envImportRef = useRef(null);
+  const projectImportRef = useRef(null);
+
   return (
     <div className="header">
       <div className="header-logo">ARTEMIS</div>
@@ -23,6 +26,32 @@ function Header({ onSave, onSettings, onFlow, onCertificates, flowActive }) {
         <button className="header-button" onClick={onSave} title="Save request (Ctrl+S)">
           💾 Save
         </button>
+        <button className="header-button" onClick={onExportEnv} title="Export environments">
+          Export Env
+        </button>
+        <button className="header-button" onClick={() => envImportRef.current?.click()} title="Import environments">
+          Import Env
+        </button>
+        <button className="header-button" onClick={onExportProject} title="Export full project">
+          Export Project
+        </button>
+        <button className="header-button" onClick={() => projectImportRef.current?.click()} title="Import full project">
+          Import Project
+        </button>
+        <input
+          ref={envImportRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={onImportEnv}
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={projectImportRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={onImportProject}
+          style={{ display: 'none' }}
+        />
         <button
           className={`header-button flow-header-btn${flowActive ? ' active' : ''}`}
           onClick={onFlow}

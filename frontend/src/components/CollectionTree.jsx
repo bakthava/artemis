@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useRequest } from '../context/RequestContext';
 
-function CollectionTree({ collections, setResponse }) {
+function CollectionTree({ collections, setResponse, onDeleteCollection }) {
   const { loadRequest } = useRequest();
   const [expandedCollections, setExpandedCollections] = useState({});
 
@@ -25,11 +25,24 @@ function CollectionTree({ collections, setResponse }) {
             <div
               className="sidebar-item"
               onClick={() => toggleExpanded(collection.id)}
-              style={{ cursor: 'pointer', fontWeight: '500', fontSize: '12px' }}
+              style={{ cursor: 'pointer', fontWeight: '500', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
               <span>
                 {expandedCollections[collection.id] ? '▼' : '▶'} {collection.name}
               </span>
+              {onDeleteCollection && (
+                <button
+                  className="sidebar-add-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteCollection(collection.id, collection.name);
+                  }}
+                  title="Delete collection"
+                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
             {expandedCollections[collection.id] && collection.requests && (

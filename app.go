@@ -4,6 +4,8 @@ import (
 	"artemis/internal/db"
 	"artemis/internal/models"
 	"artemis/internal/services"
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -14,7 +16,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -522,6 +526,120 @@ func (a *App) SaveFlowToFile(flow *models.Flow) (string, error) {
 	}
 
 	return filePath, nil
+}
+
+// CreateFlowZip creates a ZIP file containing flow data and certificates
+func (a *App) CreateFlowZip(flowData map[string]interface{}, form *multipart.Form) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+	defer zipWriter.Close()
+
+	// Add flow.json
+	flowFile, err := zipWriter.Create("flow.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create flow.json in zip: %w", err)
+	}
+	flowJSON, err := json.MarshalIndent(flowData, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal flow data: %w", err)
+	}
+	if _, err := flowFile.Write(flowJSON); err != nil {
+		return nil, fmt.Errorf("failed to write flow.json: %w", err)
+	}
+
+	// Add certificates.json if provided
+	if certsFile := form.File["certificates"]; len(certsFile) > 0 {
+		file, err := certsFile[0].Open()
+		if err == nil {
+			defer file.Close()
+			certZipFile, err := zipWriter.Create("certificates.json")
+			if err == nil {
+				io.Copy(certZipFile, file)
+			}
+		}
+	}
+
+	// Add data files if provided
+	if dataFiles := form.File["dataFiles"]; len(dataFiles) > 0 {
+		for _, fileHeader := range dataFiles {
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
+			}
+			defer file.Close()
+
+			// Create data/ directory structure in ZIP
+			dataZipFile, err := zipWriter.Create("data/" + fileHeader.Filename)
+			if err != nil {
+				continue
+			}
+			io.Copy(dataZipFile, file)
+		}
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close zip writer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// ParseFlowZip extracts and parses a ZIP file containing flow data
+func (a *App) ParseFlowZip(zipFile io.Reader) (map[string]interface{}, map[string]interface{}, map[string]string, error) {
+	// Read ZIP into memory
+	zipData, err := io.ReadAll(zipFile)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read zip file: %w", err)
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to open zip: %w", err)
+	}
+
+	var flowData map[string]interface{}
+	certificatesData := make(map[string]interface{})
+	dataFiles := make(map[string]string)
+
+	for _, file := range zipReader.File {
+		content, err := file.Open()
+		if err != nil {
+			continue
+		}
+		defer content.Close()
+
+		fileContent, err := io.ReadAll(content)
+		if err != nil {
+			continue
+		}
+
+		// Parse flow.json
+		if file.Name == "flow.json" {
+			if err := json.Unmarshal(fileContent, &flowData); err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid flow.json: %w", err)
+			}
+		}
+
+		// Parse certificates.json
+		if file.Name == "certificates.json" {
+			if err := json.Unmarshal(fileContent, &certificatesData); err != nil {
+				// Log but don't fail - certificates are optional
+				fmt.Printf("Warning: invalid certificates.json: %v\n", err)
+			}
+		}
+
+		// Extract data files
+		if strings.HasPrefix(file.Name, "data/") && file.Name != "data/" {
+			dataFileName := strings.TrimPrefix(file.Name, "data/")
+			dataFiles[dataFileName] = string(fileContent)
+		}
+	}
+
+	if flowData == nil {
+		return nil, nil, nil, fmt.Errorf("flow.json not found in ZIP")
+	}
+
+	return flowData, certificatesData, dataFiles, nil
 }
 
 // TestJKS validates a JKS keystore by attempting to load it with the given password
