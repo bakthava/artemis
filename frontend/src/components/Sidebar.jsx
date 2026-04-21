@@ -107,12 +107,6 @@ function Sidebar({ setResponse }) {
     }
   };
 
-  const handleClearHistory = async () => {
-    await clearHistory();
-    setResponse(null);
-    showToast('History cleared', 'info');
-  };
-
   const handleImportEnvironments = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -180,6 +174,14 @@ function Sidebar({ setResponse }) {
       showToast(err.message, 'error');
     }
   };
+
+  const handleClearHistory = async () => {
+    await clearHistory();
+    setResponse(null);
+    showToast('History cleared', 'info');
+  };
+
+
 
   const handleDeleteCollection = (id, name) => {
     setConfirmDialog({ isOpen: true, type: 'collection', id, name });
@@ -431,81 +433,6 @@ function Sidebar({ setResponse }) {
         cancelText="Cancel"
         isDanger={true}
       />
-
-      {/* Collection Selection Modal for Environment */}
-      {showCollectionModal && settingsEnvId && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-primary)',
-            borderRadius: '8px',
-            padding: '20px',
-            minWidth: '400px',
-            maxHeight: '70vh',
-            overflowY: 'auto',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          }}>
-            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>
-              Attach Collections to Environment
-            </h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
-              {collections && collections.length > 0 ? (
-                collections.map(collection => {
-                  const isAttached = (envCollectionMapping[settingsEnvId] || []).includes(collection.id);
-                  return (
-                    <label
-                      key={collection.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '8px',
-                        backgroundColor: isAttached ? 'var(--bg-secondary)' : 'transparent',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isAttached}
-                        onChange={() => handleToggleCollection(settingsEnvId, collection.id)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span>{collection.name}</span>
-                    </label>
-                  );
-                })
-              ) : (
-                <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                  No collections available
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleCloseCollectionModal}
-                className="send-button"
-                style={{ padding: '6px 12px', fontSize: '12px' }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Import Modal */}
       {showImportModal && (
@@ -848,6 +775,83 @@ function Sidebar({ setResponse }) {
           </div>
         </div>
       )}
+
+      {/* Collection Selection Modal for Environment */}
+      {showCollectionModal && settingsEnvId && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: '8px',
+            padding: '20px',
+            minWidth: '400px',
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>
+              Attach Collections to Environment
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
+              {collections && collections.length > 0 ? (
+                collections.map(collection => {
+                  const isAttached = (envCollectionMapping[settingsEnvId] || []).includes(collection.id);
+                  return (
+                    <label
+                      key={collection.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px',
+                        backgroundColor: isAttached ? 'var(--bg-secondary)' : 'transparent',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isAttached}
+                        onChange={() => handleToggleCollection(settingsEnvId, collection.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span>{collection.name}</span>
+                    </label>
+                  );
+                })
+              ) : (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  No collections available
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleCloseCollectionModal}
+                className="send-button"
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
     </div>
   );
 }

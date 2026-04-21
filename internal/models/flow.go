@@ -103,17 +103,21 @@ type FlowStep struct {
 	// assert step fields
 	AssertCondition *StepCondition `json:"assertCondition,omitempty"`
 	AssertMessage   string         `json:"assertMessage,omitempty"`
+
+	// certificate selection (applies to request/grpc steps)
+	SelectedCertificateSetID string `json:"selectedCertificateSetId,omitempty"`
 }
 
 // Flow represents a saved automation flow
 type Flow struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Start     *FlowStart        `json:"start,omitempty"`
-	End       *FlowEnd          `json:"end,omitempty"`
-	Steps     []FlowStep        `json:"steps"`
-	Edges     []FlowEdge        `json:"edges,omitempty"`
-	Variables map[string]string `json:"variables"`
-	CreatedAt int64             `json:"createdAt"`
-	UpdatedAt int64             `json:"updatedAt"`
+	ID                      string            `json:"id"`
+	Name                    string            `json:"name"`
+	Start                   *FlowStart        `json:"start,omitempty"`
+	End                     *FlowEnd          `json:"end,omitempty"`
+	Steps                   []FlowStep        `json:"steps"`
+	Edges                   []FlowEdge        `json:"edges,omitempty"`
+	Variables               map[string]string `json:"variables"`
+	SelectedCertificateSetID string            `json:"selectedCertificateSetId,omitempty"`
+	CreatedAt               int64             `json:"createdAt"`
+	UpdatedAt               int64             `json:"updatedAt"`
 }

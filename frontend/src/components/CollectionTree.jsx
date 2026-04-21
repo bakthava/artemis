@@ -12,8 +12,8 @@ function CollectionTree({ collections, setResponse, onDeleteCollection }) {
     }));
   };
 
-  const handleRequestClick = (request) => {
-    loadRequest(request);
+  const handleRequestClick = (request, collectionId) => {
+    loadRequest({ ...request, collectionId });
     setResponse(null); // Clear previous response
   };
 
@@ -52,7 +52,7 @@ function CollectionTree({ collections, setResponse, onDeleteCollection }) {
                     <div
                       key={request.id}
                       className="sidebar-item"
-                      onClick={() => handleRequestClick(request)}
+                      onClick={() => handleRequestClick(request, collection.id)}
                       style={{
                         cursor: 'pointer',
                         fontSize: '11px',

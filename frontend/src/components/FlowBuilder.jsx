@@ -570,6 +570,12 @@ export default function FlowBuilder({ onClose }) {
         const stillExists = allFlows.some(f => f.id === lastFlow.id);
         if (stillExists) {
           setActiveFlow(toEditableFlow(lastFlow));
+          // Restore the certificate selection from the flow
+          if (lastFlow.selectedCertificateSetId) {
+            setSelectedFlowCertificateSetId(lastFlow.selectedCertificateSetId);
+          } else {
+            setSelectedFlowCertificateSetId(null);
+          }
           setSelectedId(null);
           setSelectedEdge(null);
           setStepStatuses({});
@@ -580,6 +586,12 @@ export default function FlowBuilder({ onClose }) {
 
       if (lastFlow && !lastFlow.id) {
         setActiveFlow(toEditableFlow(lastFlow));
+        // Restore the certificate selection from the flow
+        if (lastFlow.selectedCertificateSetId) {
+          setSelectedFlowCertificateSetId(lastFlow.selectedCertificateSetId);
+        } else {
+          setSelectedFlowCertificateSetId(null);
+        }
         setSelectedId(null);
         setSelectedEdge(null);
         setStepStatuses({});
@@ -591,6 +603,12 @@ export default function FlowBuilder({ onClose }) {
 
   function selectFlow(f) {
     setActiveFlow(toEditableFlow(f));
+    // Restore the certificate selection from the flow
+    if (f.selectedCertificateSetId) {
+      setSelectedFlowCertificateSetId(f.selectedCertificateSetId);
+    } else {
+      setSelectedFlowCertificateSetId(null);
+    }
     setSelectedId(null);
     setSelectedEdge(null);
     setStepStatuses({});
@@ -713,6 +731,10 @@ export default function FlowBuilder({ onClose }) {
     }
     try {
       const payload = sanitizeForApi(activeFlow);
+      // Include the global certificate selection when saving
+      if (activeCertificateSetId) {
+        payload.selectedCertificateSetId = activeCertificateSetId;
+      }
       const saved = activeFlow.id
         ? await api.flows.update(payload)
         : await api.flows.create(payload);

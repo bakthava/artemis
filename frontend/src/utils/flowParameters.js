@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+﻿import * as XLSX from 'xlsx';
 
 const ALLOWED_EXTENSIONS = new Set(['csv', 'dat', 'txt', 'xls', 'xlsx']);
 const TEXT_CHARSETS = {

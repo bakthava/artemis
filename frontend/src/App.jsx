@@ -24,6 +24,7 @@ function AppContent() {
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveMode, setSaveMode] = useState('save'); // 'save' or 'saveas'
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCertificateManager, setShowCertificateManager] = useState(false);
   const [showFlow, setShowFlow] = useState(false);
@@ -37,8 +38,63 @@ function AppContent() {
   const { refreshHistory, refreshCollections } = useAppContext();
   const { draft } = useLoadDraftRequest();
   const { fetchEnvironments } = useEnvironments();
-  const { fetchCollections } = useCollections();
+  const { collections, fetchCollections } = useCollections();
   const { showToast } = useToast();
+
+  // Direct save handler - saves without showing modal if request is already saved
+  const handleDirectSave = useCallback(async () => {
+    // Check if request has an ID and exists in a collection
+    if (!request?.id) {
+      // No ID means it's a new request - show modal
+      setSaveMode('saveas');
+      setShowSaveModal(true);
+      return;
+    }
+
+    try {
+      // Prefer explicit collectionId when available, then fallback by request id lookup.
+      let matchedCollection = null;
+
+      if (request.collectionId) {
+        matchedCollection = (collections || []).find(col => col.id === request.collectionId) || null;
+      }
+
+      if (!matchedCollection) {
+        matchedCollection = (collections || []).find(col =>
+          (col.requests || []).some(savedReq => savedReq?.id === request.id)
+        ) || null;
+      }
+
+      // If local state is stale, retry lookup from latest API data before showing modal.
+      if (!matchedCollection) {
+        const latestCollections = await api.collections.getAll();
+        if (request.collectionId) {
+          matchedCollection = (latestCollections || []).find(col => col.id === request.collectionId) || null;
+        }
+        if (!matchedCollection) {
+          matchedCollection = (latestCollections || []).find(col =>
+            (col.requests || []).some(savedReq => savedReq?.id === request.id)
+          ) || null;
+        }
+      }
+
+      if (!matchedCollection) {
+        setSaveMode('saveas');
+        setShowSaveModal(true);
+        return;
+      }
+
+      const updatedRequest = {
+        ...request,
+        id: request.id,
+      };
+      await api.collections.addRequest(matchedCollection.id, updatedRequest);
+      showToast('Request saved', 'success');
+      refreshCollections();
+    } catch (err) {
+      showToast(`Error saving request: ${err.message}`, 'error');
+    }
+  }, [request, collections, showToast, refreshCollections]);
 
   const downloadJSON = useCallback((data, fileName) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -177,21 +233,21 @@ function AppContent() {
       const sendBtn = document.querySelector('.send-button');
       sendBtn?.click();
     },
-    saveRequest: () => setShowSaveModal(true),
+    saveRequest: () => handleDirectSave(),
   });
 
   return (
     <>
       <Header
-        onSave={() => setShowSaveModal(true)}
+        onSave={handleDirectSave}
+        onSaveAs={() => {
+          setSaveMode('saveas');
+          setShowSaveModal(true);
+        }}
         onSettings={() => setShowSettingsModal(true)}
         onCertificates={() => setShowCertificateManager(true)}
         onFlow={() => setShowFlow(v => !v)}
         flowActive={showFlow}
-        onExportEnv={handleExportEnvironments}
-        onImportEnv={handleImportEnvironments}
-        onExportProject={handleExportProject}
-        onImportProject={handleImportProject}
       />
       {showFlow ? (
         <div className="flow-view">
@@ -248,6 +304,7 @@ function AppContent() {
         isOpen={showSaveModal}
         onClose={() => setShowSaveModal(false)}
         onSaveComplete={refreshCollections}
+        mode={saveMode}
       />
       <SettingsModal
         isOpen={showSettingsModal}

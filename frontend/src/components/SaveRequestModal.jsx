@@ -4,8 +4,8 @@ import { useCollections } from '../hooks';
 import { useToast } from '../context/ToastContext';
 import api from '../services/api';
 
-export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
-  const { request } = useRequest();
+export default function SaveRequestModal({ isOpen, onClose, onSaveComplete, mode = 'save' }) {
+  const { request, setRequest } = useRequest();
   const { collections, createCollection } = useCollections();
   const { showToast } = useToast();
   const [requestName, setRequestName] = useState('');
@@ -16,17 +16,22 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
   useEffect(() => {
     if (!isOpen) return;
 
-    setRequestName(request?.name || '');
-
-    if (request?.id) {
-      const matchedCollection = collections?.find(col =>
-        (col.requests || []).some(savedReq => savedReq?.id === request.id)
-      );
-      setSelectedCollection(matchedCollection?.id || '');
-    } else {
+    // For "Save As" mode, always start fresh; for "Save" mode, pre-fill if request exists
+    if (mode === 'saveas') {
+      setRequestName(request?.name ? `${request.name} (copy)` : '');
       setSelectedCollection('');
+    } else {
+      setRequestName(request?.name || '');
+      if (request?.id) {
+        const matchedCollection = collections?.find(col =>
+          (col.requests || []).some(savedReq => savedReq?.id === request.id)
+        );
+        setSelectedCollection(matchedCollection?.id || '');
+      } else {
+        setSelectedCollection('');
+      }
     }
-  }, [isOpen, request?.id, request?.name, collections]);
+  }, [isOpen, request?.id, request?.name, collections, mode]);
 
   const handleSave = async () => {
     if (!requestName.trim()) {
@@ -39,17 +44,36 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
     }
 
     try {
+      // Determine if we're updating or creating new
+      const isUpdate = mode === 'save' && request?.id;
+      const newRequestId = isUpdate ? request.id : `req-${Date.now()}`;
+      
       const savedRequest = {
         ...request,
         name: requestName,
-        id: request?.id || `req-${Date.now()}`,
+        id: newRequestId,
       };
+      
       await api.collections.addRequest(selectedCollection, savedRequest);
-      showToast(request?.id ? 'Request updated successfully' : 'Request saved successfully', 'success');
+      
+      // For "Save As", update the request context with new ID
+      if (mode === 'saveas') {
+        setRequest({ ...request, id: newRequestId, name: requestName });
+        showToast('Request saved as new', 'success');
+      } else {
+        // For regular "Save", show appropriate message
+        if (isUpdate) {
+          showToast('Request updated successfully', 'success');
+        } else {
+          showToast('Request saved successfully', 'success');
+          setRequest({ ...request, id: newRequestId, name: requestName });
+        }
+      }
+      
       setRequestName('');
       setSelectedCollection('');
       onClose();
-      // Refresh collections to show new request
+      // Refresh collections to show new/updated request
       onSaveComplete?.();
     } catch (err) {
       showToast(`Error saving request: ${err.message}`, 'error');
@@ -80,7 +104,7 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Save Request</h2>
+          <h2>{mode === 'saveas' ? 'Save Request As' : 'Save Request'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -152,7 +176,9 @@ export default function SaveRequestModal({ isOpen, onClose, onSaveComplete }) {
         </div>
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave}>Save Request</button>
+          <button className="btn-primary" onClick={handleSave}>
+            {mode === 'saveas' ? 'Save As' : 'Save'}
+          </button>
         </div>
       </div>
     </div>

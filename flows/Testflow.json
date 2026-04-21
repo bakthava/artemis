@@ -1,0 +1,189 @@
+{
+  "id": "5b658c0d-4a08-4b68-ba54-3ff7c29f671a",
+  "name": "Testflow",
+  "steps": [
+    {
+      "id": "s1775926264634acwe59",
+      "type": "request",
+      "name": "HTTP Request",
+      "enabled": true,
+      "x": 302,
+      "y": 188,
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/status/200",
+        "headers": {},
+        "params": {},
+        "body": "",
+        "bodyType": "json"
+      },
+      "selectedCertificateSetId": "44100f04-3889-44c4-b0c7-df9fdfe449ec"
+    },
+    {
+      "id": "s1775926368295cdvc0x",
+      "type": "condition",
+      "name": "Condition",
+      "enabled": true,
+      "x": 522,
+      "y": 72,
+      "condition": {
+        "left": "{{statusCode}}",
+        "operator": "contains",
+        "right": "500"
+      }
+    },
+    {
+      "id": "s17759264530044crcfk",
+      "type": "request",
+      "name": "HTTP Request",
+      "enabled": true,
+      "x": 914,
+      "y": 77,
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/status/200",
+        "headers": {},
+        "params": {},
+        "body": "",
+        "bodyType": "json"
+      }
+    },
+    {
+      "id": "s1775928907235siesr7",
+      "type": "request",
+      "name": "HTTP Request 2",
+      "enabled": true,
+      "x": 1074,
+      "y": 467,
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/status/200",
+        "headers": {},
+        "params": {},
+        "body": "",
+        "bodyType": "json"
+      }
+    },
+    {
+      "id": "s1775930291633pkcgdr",
+      "type": "delay",
+      "name": "Delay",
+      "enabled": true,
+      "x": 883,
+      "y": 178,
+      "delayMs": 1000
+    },
+    {
+      "id": "s177593234094391ze9v",
+      "type": "start",
+      "name": "Start",
+      "enabled": true,
+      "x": 89,
+      "y": 390,
+      "mode": "performance",
+      "numUsers": 5,
+      "rampUpSeconds": 1,
+      "durationSeconds": 30
+    },
+    {
+      "id": "s1775932382241rnzi14",
+      "type": "end",
+      "name": "End",
+      "enabled": true,
+      "x": 1272,
+      "y": 588
+    },
+    {
+      "id": "s17759323987847rjwfs",
+      "type": "end",
+      "name": "End",
+      "enabled": true,
+      "x": 1281,
+      "y": 266
+    },
+    {
+      "id": "s1775937273337ae6f60",
+      "type": "request",
+      "name": "HTTP Request 3",
+      "enabled": true,
+      "x": 369,
+      "y": 317,
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/status/200",
+        "headers": {},
+        "params": {},
+        "body": "",
+        "bodyType": "json"
+      }
+    },
+    {
+      "id": "s1775937307477rzmsrb",
+      "type": "request",
+      "name": "HTTP Request",
+      "enabled": true,
+      "x": 407,
+      "y": 458,
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/status/200",
+        "headers": {},
+        "params": {},
+        "body": "",
+        "bodyType": "json"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1775928855596gofj9",
+      "from": "s1775926264634acwe59",
+      "to": "s1775926368295cdvc0x"
+    },
+    {
+      "id": "e1775928885575xu45e",
+      "from": "s1775926368295cdvc0x",
+      "to": "s17759264530044crcfk",
+      "label": "then"
+    },
+    {
+      "id": "e1775930306347uiksv",
+      "from": "s1775926368295cdvc0x",
+      "to": "s1775930291633pkcgdr",
+      "label": "else"
+    },
+    {
+      "id": "e1775930309322eccet",
+      "from": "s1775930291633pkcgdr",
+      "to": "s1775928907235siesr7"
+    },
+    {
+      "id": "e17759323481603ub8c",
+      "from": "s177593234094391ze9v",
+      "to": "s1775926264634acwe59"
+    },
+    {
+      "id": "e1775932394723z2g6z",
+      "from": "s1775928907235siesr7",
+      "to": "s1775932382241rnzi14"
+    },
+    {
+      "id": "e1775932404350tj57y",
+      "from": "s17759264530044crcfk",
+      "to": "s17759323987847rjwfs"
+    },
+    {
+      "id": "e17759378477502x8iz",
+      "from": "s177593234094391ze9v",
+      "to": "s1775937273337ae6f60"
+    },
+    {
+      "id": "e177593817396629xfe",
+      "from": "s177593234094391ze9v",
+      "to": "s1775937307477rzmsrb"
+    }
+  ],
+  "variables": {},
+  "createdAt": 1775926362,
+  "updatedAt": 1776731046
+}
